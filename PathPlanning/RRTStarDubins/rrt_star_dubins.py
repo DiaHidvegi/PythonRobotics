@@ -65,6 +65,7 @@ class RRTStarDubins(RRTStar):
         self.goal_yaw_th = np.deg2rad(1.0)
         self.goal_xy_th = 0.5
         self.robot_radius = robot_radius
+        self.found_path = []
 
     def planning(self, animation=True, search_until_max_iter=True):
         """
@@ -134,7 +135,7 @@ class RRTStarDubins(RRTStar):
 
     def steer(self, from_node, to_node):
 
-        px, py, pyaw, mode, course_lengths = \
+        px, py, pyaw, mode, course_lengths, energy_cost, segment_energy_costs = \
             dubins_path_planner.plan_dubins_path(
                 from_node.x, from_node.y, from_node.yaw,
                 to_node.x, to_node.y, to_node.yaw, self.curvature)
@@ -150,6 +151,8 @@ class RRTStarDubins(RRTStar):
         new_node.path_x = px
         new_node.path_y = py
         new_node.path_yaw = pyaw
+        new_node.energy_cost = energy_cost
+        new_node.segment_energy_costs = segment_energy_costs
         new_node.cost += sum([abs(c) for c in course_lengths])
         new_node.parent = from_node
 
@@ -157,7 +160,7 @@ class RRTStarDubins(RRTStar):
 
     def calc_new_cost(self, from_node, to_node):
 
-        _, _, _, _, course_lengths = dubins_path_planner.plan_dubins_path(
+        _, _, _, _, course_lengths, _, _ = dubins_path_planner.plan_dubins_path(
             from_node.x, from_node.y, from_node.yaw,
             to_node.x, to_node.y, to_node.yaw, self.curvature)
 
@@ -207,8 +210,11 @@ class RRTStarDubins(RRTStar):
         while node.parent:
             for (ix, iy) in zip(reversed(node.path_x), reversed(node.path_y)):
                 path.append([ix, iy])
+            self.found_path.append(node)
             node = node.parent
         path.append([self.start.x, self.start.y])
+        self.found_path.append(self.start)
+        self.found_path.reverse()
         return path
 
 

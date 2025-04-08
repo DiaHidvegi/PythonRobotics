@@ -100,7 +100,7 @@ def plan_dubins_path(s_x, s_y, s_yaw, s_velocity,
     local_goal_yaw = g_yaw - s_yaw
 
     # AFTER: produce velocity_list right away along with other optimized parameters
-    lp_x, lp_y, lp_yaw, velocity_list, modes, lengths, path_cost = _dubins_path_planning_from_origin(
+    lp_x, lp_y, lp_yaw, velocity_list, modes, lengths, segment_velocities, lsegment_coordinates, path_cost = _dubins_path_planning_from_origin(
         local_goal_x, local_goal_y, local_goal_yaw, s_velocity, g_velocity, curvature_search_range, step_size,
         planning_funcs, velocity_range, velocity_step, energy_weights)
 
@@ -111,69 +111,13 @@ def plan_dubins_path(s_x, s_y, s_yaw, s_velocity,
     y_list = converted_xy[:, 1] + s_y
     yaw_list = angle_mod(np.array(lp_yaw) + s_yaw)
 
-    return x_list, y_list, yaw_list, velocity_list, modes, lengths, path_cost
+    lsegment_coordinates_x, lsegment_coordinates_y = lsegment_coordinates
+    converted_segment_coordinates = np.stack([lsegment_coordinates_x, lsegment_coordinates_y]).T @ rot
+    segment_coordinates_x = converted_segment_coordinates[:, 0] + s_x
+    segment_coordinates_y = converted_segment_coordinates[:, 1] + s_y
+    segment_coordinates = (segment_coordinates_x, segment_coordinates_y)
 
-
-def _optimize_path_and_velocity(end_x, end_y, end_yaw, end_velocity, curvature, step_size,
-                                planning_funcs, velocity_range, velocity_step, energy_weights):
-    """
-    Optimize both path type and velocity to minimize energy consumption
-
-    Parameters
-    ----------
-    end_x, end_y, end_yaw, end_velocity : float
-        End point position, orientation and velocity in local coordinates
-    curvature : float
-        Curvature for curve [1/m]
-    step_size : float
-        Step size between two path points [m]
-    planning_funcs : list
-        List of path planning functions to use
-    velocity_range : tuple
-        Range of velocities to consider (min, max)
-    velocity_step : float
-        Step size for velocity optimization
-    energy_weights : dict
-        Weights for energy cost components
-
-    Returns
-    -------
-    best_x_list, best_y_list, best_yaw_list, best_velocities : list of float
-        Best path coordinates
-    best_modes : list of str
-        Best path segment modes
-    best_lengths : list of float
-        Best path segment lengths
-    """
-    best_cost = float("inf")
-    best_x_list = None
-    best_y_list = None
-    best_yaw_list = None
-    best_velocities = None
-    best_modes = None
-    best_lengths = None
-
-    # TODO: Decide If I want to sample across the velocity range here!!!
-    # (or instead within the _dubins_path_planning_from_origin)
-
-    # Sample 2 velocities for: End velocity of 1st segment, End velocity of 2nd segment
-    # Note: Start velcity and End velocity of path is given by EERT*
-    for velocity in np.arange(velocity_range[0], velocity_range[1] + velocity_step, velocity_step):
-        lp_x, lp_y, lp_yaw, lp_velocities, modes, lengths, path_cost = _dubins_path_planning_from_origin(
-            end_x, end_y, end_yaw, end_velocity, curvature, step_size, planning_funcs, energy_weights)
-
-        # If we found a better path
-        if path_cost < best_cost:
-            best_cost = path_cost
-            best_x_list = lp_x
-            best_y_list = lp_y
-            best_yaw_list = lp_yaw
-            best_velocities = lp_velocities
-            best_modes = modes
-            best_lengths = lengths
-
-    return best_x_list, best_y_list, best_yaw_list, best_velocities, best_modes, best_lengths
-
+    return x_list, y_list, yaw_list, velocity_list, modes, lengths, segment_velocities, segment_coordinates, path_cost
 
 def _mod2pi(theta):
     return angle_mod(theta, zero_2_2pi=True)
@@ -300,6 +244,7 @@ def _calculate_energy_cost(d1, d2, d3, mode, v1, v2, v3, v4, curvature, energy_w
     velocities = [v1, v2, v3, v4]
     radius = 1 / curvature
     energy_cost = 0.0
+    segment_costs = []
 
     # Energy cost for each segment based on type (straight vs. turn)
 
@@ -315,8 +260,9 @@ def _calculate_energy_cost(d1, d2, d3, mode, v1, v2, v3, v4, curvature, energy_w
             segment_energy *= (1 / radius)
 
         energy_cost += segment_energy
+        segment_costs.append(segment_energy)
 
-    return energy_cost
+    return energy_cost, segment_costs
 
 def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end_velocity, curvature_search_range,
                                       step_size, planning_funcs, velocity_range, velocity_step, energy_weights):
@@ -330,6 +276,7 @@ def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end
     beta = _mod2pi(end_yaw - theta)
 
     best_cost = float("inf")
+    best_segment_costs = []
     b_d1, b_d2, b_d3, b_mode = None, None, None, None
 
     # TODO: Obviously optimize this entire search below :)
@@ -350,19 +297,87 @@ def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end
             for v2 in velocity_search_range:
                 for v3 in velocity_search_range:
                     # Calculate Energy-based cost
-                    cost = _calculate_energy_cost(
+                    cost, segment_costs = _calculate_energy_cost(
                         d1, d2, d3, mode, v1, v2, v3, v4, cur, energy_weights)
 
                     if best_cost > cost:  # Select minimum energy cost path
-                        b_d1, b_d2, b_d3, b_v2, b_v3, b_mode, b_cur, best_cost = d1, d2, d3, v2, v3, mode, cur, cost
+                        b_d1, b_d2, b_d3, b_v2, b_v3, b_mode, b_cur, best_cost, best_segment_costs = d1, d2, d3, v2, v3, mode, cur, cost, segment_costs
 
+    segment_velocities = [v1, b_v2, b_v3, v4]
     lengths = [b_d1, b_d2, b_d3]
-    x_list, y_list, yaw_list = _generate_local_course(lengths, b_mode, b_cur, step_size)
+    x_list, y_list, yaw_list, velocity_list, lsegment_coordinates = _generate_local_course(lengths, b_mode, b_cur, step_size, segment_velocities)
     lengths = [length / b_cur for length in lengths]
-    velocity_list = [v1, b_v2, b_v3, v4]
 
-    return x_list, y_list, yaw_list, velocity_list, b_mode, lengths, best_cost
+    return x_list, y_list, yaw_list, velocity_list, b_mode, lengths, segment_velocities, lsegment_coordinates, best_segment_costs
 
+import numpy as np
+
+import numpy as np
+
+def interpolate_velocities(p_x, p_y, segment_velocities, segment_coordinates_x, segment_coordinates_y, max_acc=1.0):
+    """
+    Interpolates velocities along a path based on segment velocities and segment coordinates,
+    taking into account acceleration and deceleration limits.
+
+    Args:
+        p_x: List of x coordinates of the path.
+        p_y: List of y coordinates of the path.
+        segment_velocities: List of 4 velocities at specific segments.
+        segment_coordinates_x: List of 4 x coordinates corresponding to segment_velocities.
+        segment_coordinates_y: List of 4 y coordinates corresponding to segment_velocities.
+        max_acc: Maximum acceleration/deceleration allowed.
+
+    Returns:
+        interpolated_velocities: List of velocities along the path.
+    """
+
+    path_len = len(p_x)
+    interpolated_velocities = np.zeros(path_len)
+
+    # Calculate cumulative distance along the path
+    path_s = np.zeros(path_len)
+    for i in range(1, path_len):
+        dx = p_x[i] - p_x[i-1]
+        dy = p_y[i] - p_y[i-1]
+        path_s[i] = path_s[i-1] + np.hypot(dx, dy)
+
+    # Calculate s positions of velocity segments
+    segment_s = []
+    for sx, sy in zip(segment_coordinates_x, segment_coordinates_y):
+        # Find closest point on path
+        dists = np.hypot(np.array(p_x) - sx, np.array(p_y) - sy)
+        closest_idx = np.argmin(dists)
+        segment_s.append(path_s[closest_idx])
+
+    # Interpolate target velocities linearly over the segments
+    try:
+        interpolated_target_velocities = np.interp(path_s, segment_s, segment_velocities)
+    except:
+        print(f"segment_coordinates_x: {segment_coordinates_x}")
+        print(f"segment_coordinates_y: {segment_coordinates_y}")
+        print(f"segment_s: {segment_s}")
+        print(f"path_s: {path_s}")
+        print(f"segment_velocities: {segment_velocities}")
+        raise Exception("Error interpolating velocities")
+
+    # Forward pass (acceleration limit)
+    interpolated_velocities[0] = interpolated_target_velocities[0]
+    for i in range(1, path_len):
+        ds = path_s[i] - path_s[i-1]
+        v_prev = interpolated_velocities[i-1]
+        v_target = interpolated_target_velocities[i]
+        v_possible = np.sqrt(v_prev**2 + 2 * max_acc * ds)
+        interpolated_velocities[i] = min(v_possible, v_target)
+
+    # Backward pass (deceleration limit)
+    for i in range(path_len-2, -1, -1):
+        ds = path_s[i+1] - path_s[i]
+        v_next = interpolated_velocities[i+1]
+        v_target = interpolated_velocities[i]
+        v_possible = np.sqrt(v_next**2 + 2 * max_acc * ds)
+        interpolated_velocities[i] = min(v_target, v_possible)
+
+    return interpolated_velocities.tolist()
 
 def _interpolate(length, mode, max_curvature, origin_x, origin_y,
                  origin_yaw, path_x, path_y, path_yaw):
@@ -390,8 +405,9 @@ def _interpolate(length, mode, max_curvature, origin_x, origin_y,
     return path_x, path_y, path_yaw
 
 
-def _generate_local_course(lengths, modes, max_curvature, step_size):
-    p_x, p_y, p_yaw = [0.0], [0.0], [0.0]
+def _generate_local_course(lengths, modes, max_curvature, step_size, segment_velocities):
+    p_x, p_y, p_yaw, p_velocity = [0.0], [0.0], [0.0], [0.0]
+    lsegment_coordinates_x, lsegment_coordinates_y = [], []
 
     for (mode, length) in zip(modes, lengths):
         if length == 0.0:
@@ -399,6 +415,8 @@ def _generate_local_course(lengths, modes, max_curvature, step_size):
 
         # set origin state
         origin_x, origin_y, origin_yaw = p_x[-1], p_y[-1], p_yaw[-1]
+        lsegment_coordinates_x.append(origin_x)
+        lsegment_coordinates_y.append(origin_y)
 
         current_length = step_size
         while abs(current_length + step_size) <= abs(length):
@@ -409,8 +427,17 @@ def _generate_local_course(lengths, modes, max_curvature, step_size):
 
         p_x, p_y, p_yaw = _interpolate(length, mode, max_curvature, origin_x,
                                        origin_y, origin_yaw, p_x, p_y, p_yaw)
+    
+    lsegment_coordinates_x.append(p_x[-1])
+    lsegment_coordinates_y.append(p_y[-1])
+    
+    if p_x != [0.0]:
+        segment_velocities = segment_velocities[:len(lsegment_coordinates_x)]
 
-    return p_x, p_y, p_yaw
+        p_velocity = interpolate_velocities(
+            p_x, p_y, segment_velocities, lsegment_coordinates_x, lsegment_coordinates_y)
+
+    return p_x, p_y, p_yaw, p_velocity, (lsegment_coordinates_x[1:], lsegment_coordinates_y[1:])
 
 
 def main():
@@ -449,7 +476,7 @@ def main():
         start_x, start_y, start_yaw, end_x, end_y, end_yaw, curvature, step_size=step_size)
 
     # Energy based
-    energy_path_x, energy_path_y, energy_path_yaw, energy_velocity_list, energy_mode, energy_lengths, path_cost = plan_dubins_path(
+    energy_path_x, energy_path_y, energy_path_yaw, energy_velocity_list, energy_mode, energy_lengths, segment_velocities, segment_coordinates, path_cost = plan_dubins_path(
         start_x, start_y, start_yaw, start_velocity,
         end_x, end_y, end_yaw, end_velocity,
         curvature_search_range, step_size=step_size, selected_types=None,
