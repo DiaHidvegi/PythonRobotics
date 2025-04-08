@@ -213,6 +213,8 @@ class RRTStarDubins(RRTStar):
 
 
 def main():
+    import time
+
     print("Start rrt star with dubins planning")
 
     # ====Search Path with RRT====
