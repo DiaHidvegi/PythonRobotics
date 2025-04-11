@@ -122,7 +122,6 @@ def plan_dubins_path(s_x, s_y, s_yaw, s_velocity,
 def _mod2pi(theta):
     return angle_mod(theta, zero_2_2pi=True)
 
-
 def _calc_trig_funcs(alpha, beta):
     sin_a = sin(alpha)
     sin_b = sin(beta)
@@ -252,12 +251,11 @@ def _calculate_energy_cost(d1, d2, d3, mode, v1, v2, v3, v4, curvature, energy_w
         v_start = velocities[i]
         v_end = velocities[i+1]
 
-        # Straight segment
-        segment_energy = distance * ((v_start + v_end)/2)**2
-        
-        # Turn segment
-        if segment_mode in ('L', 'R'):  
-            segment_energy *= (1 / radius)
+        # Integrate acceleration over distance
+        if distance > 0:
+            segment_energy = distance * (9.81 + (v_end-v_start)**2)
+        else:
+            segment_energy = 9.81
 
         energy_cost += segment_energy
         segment_costs.append(segment_energy)
@@ -472,7 +470,7 @@ def main():
 
     # Distance based
     from PathPlanning.DubinsPath import dubins_path_planner
-    path_x, path_y, path_yaw, mode, lengths = dubins_path_planner.plan_dubins_path(
+    path_x, path_y, path_yaw, mode, lengths, energy_cost, segment_energy_costs = dubins_path_planner.plan_dubins_path(
         start_x, start_y, start_yaw, end_x, end_y, end_yaw, curvature, step_size=step_size)
 
     # Energy based

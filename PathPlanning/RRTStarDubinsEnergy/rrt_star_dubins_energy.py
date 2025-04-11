@@ -386,18 +386,35 @@ def show_energy_consumption_over_trajectory_length(fig, pos, rrtstar_dubins_ener
     plt.grid(True)
     return ax
 
+def show_energy_over_segment_index(fig, pos, rrtstar_dubins_energy, title: str):
+    ax = fig.add_subplot(pos)
+
+    segment_i = [0] + [i for i in range(1, len([c for node in rrtstar_dubins_energy.found_path[1:] for c in node.segment_coordinates[0]])+1)]
+    cost_flat = [0.0] + [sg for node in rrtstar_dubins_energy.found_path[1:] for sg in node.segment_costs]
+
+    x = segment_i
+    y = cost_flat
+
+    plt.plot(x, y, "-r")
+    plt.ylim(-5, 5)
+    plt.title(title)
+    plt.axis("equal")
+    plt.grid(True)
+    return ax
+
+
 def main():
     print("Start RRT star with energy-optimized Dubins planning")
 
     # ====Search Path with RRT====
-    # obstacleList = [
-    #     (5, 5, 1),
-    #     (3, 6, 2),
-    #     (3, 8, 2),
-    #     (3, 10, 2),
-    #     (7, 5, 2),
-    #     (9, 5, 2)
-    # ]  # [x,y,size(radius)]
+    obstacleList = [
+        (5, 5, 1),
+        (3, 6, 2),
+        (3, 8, 2),
+        (3, 10, 2),
+        (7, 5, 2),
+        (9, 5, 2)
+    ]  # [x,y,size(radius)]
 
     # Slalom Test --> cannot find path
     # obstacleList = [
@@ -412,13 +429,13 @@ def main():
     # ] # with goal: 20,20
 
        # Slalom Test 2
-    obstacleList = [
-        (7, 14, 2),
-        (10, 10, 2),
-        (8, 12, 2),
-        (12, 8.5, 1),
-        (17.5, 10, 2) # with this, it can not find path
-    ] # with goal: 15, 15
+    # obstacleList = [
+    #     (7, 14, 2),
+    #     (10, 10, 2),
+    #     (8, 12, 2),
+    #     (12, 8.5, 1),
+    #     (17.5, 10, 2) # with this, it can not find path
+    # ] # with goal: 15, 15
 
     start = [0.0, 0.0, np.deg2rad(0.0), 0.0]
     goal = [13.0, 13.0, np.deg2rad(0.0), 0.0]
@@ -463,12 +480,15 @@ def main():
         ax3 = show_final_2D_trajectory(fig3, 121, rrtstar_dubins_energy, obstacleList, energy_path, "Energy-optimized Path")
         ax4 = show_final_3D_trajectory(fig3, 122, rrtstar_dubins_energy, obstacleList, "Energy-optimized Path")
 
+        fig4 = plt.figure(figsize=(5,5))
+        ax7 = show_energy_over_segment_index(fig4, 121, rrtstar_dubins_energy, "Power over individual segments")
+
 
         plt.tight_layout()
         plt.show()
 
 
 if __name__ == '__main__':
-    # random.seed(124)
-    # np.random.seed(124)
+    # random.seed(199)
+    # np.random.seed(199)
     main()

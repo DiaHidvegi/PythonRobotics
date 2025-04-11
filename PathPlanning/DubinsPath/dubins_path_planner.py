@@ -9,6 +9,8 @@ import sys
 import pathlib
 sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))
 
+
+from PathPlanning.DubinsPathEnergy.dubins_path_energy_planner import _calculate_energy_cost
 from math import sin, cos, atan2, sqrt, acos, pi, hypot
 import numpy as np
 from utils.angle import angle_mod, rot_mat_2d
@@ -231,7 +233,6 @@ def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, curvature,
     lengths = [length / curvature for length in lengths]
 
     if calculate_energy:
-        from DubinsPathEnergy.dubins_path_energy_planner import _calculate_energy_cost
         energy_cost, segment_energy_costs = _calculate_energy_cost(b_d1, b_d2, b_d3, b_mode, v1, v2, v3, v4, curvature, [])
 
     return x_list, y_list, yaw_list, b_mode, lengths, energy_cost, segment_energy_costs
@@ -301,7 +302,7 @@ def main():
 
     curvature = 1.0
 
-    path_x, path_y, path_yaw, mode, lengths = plan_dubins_path(start_x,
+    path_x, path_y, path_yaw, mode, lengths, energy_cost, segment_energy_costs = plan_dubins_path(start_x,
                                                                start_y,
                                                                start_yaw,
                                                                end_x,
