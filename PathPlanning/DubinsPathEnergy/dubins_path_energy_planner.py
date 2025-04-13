@@ -228,9 +228,6 @@ def _calculate_energy_cost(d1, d2, d3, mode, v1, v2, v3, v4, curvature, energy_w
         (v1 is just the start velocity of first segment)
     curvature: float
         Curvature of right and left Dubin turns.
-    energy_weights : dict
-        Weights for different components of the energy model
-
     Returns
     -------
     energy_cost : float
@@ -244,18 +241,39 @@ def _calculate_energy_cost(d1, d2, d3, mode, v1, v2, v3, v4, curvature, energy_w
     radius = 1 / curvature
     energy_cost = 0.0
     segment_costs = []
-
-    # Energy cost for each segment based on type (straight vs. turn)
+    mass = 1
+    height = 1
+    gravity = 9.81
 
     for i, (segment_mode, distance) in enumerate(zip(mode, segments)):
         v_start = velocities[i]
         v_end = velocities[i+1]
 
-        # Integrate acceleration over distance
-        if distance > 0:
-            segment_energy = distance * (9.81 + (v_end-v_start)**2)
-        else:
-            segment_energy = 9.81
+        # 3 energy sources: Hover + Acceleration + Turn
+
+        # 1. Hover energy (constant power over distance)
+        hover_energy = mass * gravity * height
+        
+        # 2. Acceleration energy (integrated over distance, assuming constant acceleration over that segment distance --> I assume this is not very realistic?)
+        # For linear acceleration: v_end^2 = v_start^2 + 2*a*d
+        # Therefore: a = (v_end^2 - v_start^2)/(2*d)
+        acceleration = (v_end**2 - v_start**2)/(2*distance) if distance > 0 else 0
+        # Energy = force * distance = mass * acceleration * distance
+        accel_energy = mass * abs(acceleration) * distance
+        
+        # 3. Centripetal acceleration energy
+        # For straight segments, use infinite radius
+        # For turning segments, use the actual radius
+        turn_radius = float('inf') if segment_mode == "S" else radius
+        
+        # Centripetal acceleration = v^2/r
+        # Use v_start for calculation (conservative estimate)
+        centripetal_acc = (v_start ** 2) / turn_radius
+        # Energy = force * distance = mass * centripetal_acc * distance
+        turn_energy = mass * centripetal_acc * distance
+        
+        # Sum all energy components without weights
+        segment_energy = hover_energy + accel_energy + turn_energy
 
         energy_cost += segment_energy
         segment_costs.append(segment_energy)
@@ -482,7 +500,7 @@ def main():
         energy_weights=energy_weights)
 
     print(
-        f"Optimal end velocitities for each energy efficient path: {energy_velocity_list} m/s")
+        f"Optimal end velocitities for each energy efficient path: {[round(v,2) for v in segment_velocities]} m/s")
 
     if show_animation:
         plt.figure(figsize=(10, 5))
@@ -500,7 +518,7 @@ def main():
         # Plot energy-based path
         plt.subplot(122)
         plt.plot(energy_path_x, energy_path_y,
-                 label=f"Path type: {''.join(energy_mode)}, v={energy_velocity_list} m/s")
+                 label=f"Path type: {''.join(energy_mode)}, v={[round(v,2) for v in segment_velocities]} m/s")
         plot_arrow(start_x, start_y, start_yaw)
         plot_arrow(end_x, end_y, end_yaw)
         plt.legend()
