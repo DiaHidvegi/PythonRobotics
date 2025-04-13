@@ -1,6 +1,6 @@
 """
-Path planning Sample Code with RRT and Energy-optimized Dubins path
-modified for energy optimization
+Path planning Sample Code with RRT and power-optimized Dubins path
+modified for power optimization
 
 """
 import copy
@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sys
 import pathlib
+import pickle
 sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))  # root dir
 sys.path.append(str(pathlib.Path(__file__).parent.parent))
 
@@ -24,7 +25,7 @@ show_animation = True
 
 class RRTStarDubinsEnergy(RRTStar):
     """
-    Class for RRT star planning with energy-optimized Dubins path
+    Class for RRT star planning with power-optimized Dubins path
     """
 
     class Node(RRTStar.Node):
@@ -38,7 +39,7 @@ class RRTStarDubinsEnergy(RRTStar):
             self.path_yaw = []
             self.velocity = velocity
             self.path_velocity = [0.0]
-            self.energy_cost = 0.0
+            self.power_cost = 0.0
             self.segment_costs = []
 
 
@@ -50,7 +51,7 @@ class RRTStarDubinsEnergy(RRTStar):
                  velocity_range=(0.5, 3.0),
                  velocity_step=0.5,
                  curvature_search_range=(0.3, 1.0, 2.0),
-                 energy_weights=None):
+                 power_weights=None):
         """
         Setting Parameter
 
@@ -61,7 +62,7 @@ class RRTStarDubinsEnergy(RRTStar):
         robot_radius: robot body modeled as circle with given radius
         velocity_range: range of velocities to consider (min, max) [m/s]
         velocity_step: step size for velocity optimization [m/s]
-        energy_weights: weights for energy cost calculation
+        power_weights: weights for power cost calculation
         """
         self.start = self.Node(start[0], start[1], start[2], start[3])
         self.end = self.Node(goal[0], goal[1], goal[2], goal[3])
@@ -77,24 +78,24 @@ class RRTStarDubinsEnergy(RRTStar):
         self.goal_xy_th = 0.5
         self.robot_radius = robot_radius
 
-        # Parameters for energy-based planning
+        # Parameters for power-based planning
         self.curvature_search_range = curvature_search_range
         self.velocity_range = velocity_range
         self.velocity_step = velocity_step
-        self.energy_weights = energy_weights
-        if self.energy_weights is None:
-            self.energy_weights = {
-                'straight': 1.0,  # Base energy cost for straight segments
-                'turn': 1.5,      # Higher energy cost for turning segments
+        self.power_weights = power_weights
+        if self.power_weights is None:
+            self.power_weights = {
+                'straight': 1.0,  # Base power cost for straight segments
+                'turn': 1.5,      # Higher power cost for turning segments
                 'switch': 0.5,    # Penalty for switching between modes
-                'velocity': 0.1   # Weight for velocity impact on energy
+                'velocity': 0.1   # Weight for velocity impact on power
             }
         
         self.found_path = []
 
     def planning(self, animation=True, search_until_max_iter=True):
         """
-        RRT Star planning with energy-optimized Dubins paths
+        RRT Star planning with power-optimized Dubins paths
 
         animation: flag for animation on or off
         """
@@ -165,7 +166,7 @@ class RRTStarDubinsEnergy(RRTStar):
 
     def steer(self, from_node, to_node):
         """
-        Generate a path from from_node to to_node using energy-optimized Dubins paths
+        Generate a path from from_node to to_node using power-optimized Dubins paths
         """
         px, py, pyaw, pvelocities, mode, course_lengths, segment_velocities, segment_coordinates, path_cost = \
             dubins_path_energy_planner.plan_dubins_path(
@@ -174,7 +175,7 @@ class RRTStarDubinsEnergy(RRTStar):
                 self.curvature_search_range,
                 velocity_range=self.velocity_range,
                 velocity_step=self.velocity_step,
-                energy_weights=self.energy_weights)
+                power_weights=self.power_weights)
 
         if len(px) <= 1:  # cannot find a dubins path
             return None
@@ -194,14 +195,14 @@ class RRTStarDubinsEnergy(RRTStar):
         new_node.path_y = py
         new_node.path_yaw = pyaw
         new_node.path_velocity = pvelocities
-        new_node.energy_cost = sum(path_cost)
+        new_node.power_cost = sum(path_cost)
         new_node.parent = from_node
 
         return new_node
 
     def calc_new_cost(self, from_node, to_node):
         """
-        Calculate energy cost of new Dubins path
+        Calculate power cost of new Dubins path
         """
         _, _, _, _, _, _, _, _, path_cost = dubins_path_energy_planner.plan_dubins_path(
             from_node.x, from_node.y, from_node.yaw, from_node.velocity,
@@ -209,7 +210,7 @@ class RRTStarDubinsEnergy(RRTStar):
             self.curvature_search_range,
             velocity_range=self.velocity_range,
             velocity_step=self.velocity_step,
-            energy_weights=self.energy_weights)
+            power_weights=self.power_weights)
 
         return from_node.cost + sum(path_cost)
 
@@ -243,10 +244,10 @@ class RRTStarDubinsEnergy(RRTStar):
         if not final_goal_indexes:
             return None
 
-        min_cost = min([self.node_list[i].energy_cost for i in final_goal_indexes])
+        min_cost = min([self.node_list[i].power_cost for i in final_goal_indexes])
         for i in final_goal_indexes:
-            if self.node_list[i].energy_cost == min_cost:  # TODO check if this works with fully energy based cost 
-                print(f"self.node_list[i].energy_cost == min_cost: {self.node_list[i].energy_cost == min_cost}")
+            if self.node_list[i].power_cost == min_cost:  # TODO check if this works with fully power based cost 
+                print(f"self.node_list[i].power_cost == min_cost: {self.node_list[i].power_cost == min_cost}")
                 return i
 
         return None
@@ -310,8 +311,8 @@ def show_final_2D_trajectory(fig, pos, rrtstar_dubins: RRTStar, obstacleList, pa
     path_y_nodes = [node.y for node in rrtstar_dubins.found_path]
     plt.plot(path_x_nodes[1:-1], path_y_nodes[1:-1], "or", alpha=0.5)
 
-    total_energy_cost = round(sum([node.energy_cost for node in rrtstar_dubins.found_path[1:]]), 2)
-    plt.title(title + f" Total Energy: {total_energy_cost}")
+    total_power_cost = round(sum([node.power_cost for node in rrtstar_dubins.found_path[1:]]), 2)
+    plt.title(title + f" Total power: {total_power_cost}")
     plt.axis("equal")
     plt.grid(True)
     return ax
@@ -356,10 +357,10 @@ def show_final_3D_trajectory(fig, pos, rrtstar_dubins: RRTStar, obstacleList, ti
     ax.set_zlabel('Velocity')
     return ax
 
-def show_velocity_over_trajectory_length(fig, pos, rrtstar_dubins_energy, title: str):
+def show_velocity_over_trajectory_length(fig, pos, rrtstar_dubins_power, title: str):
     ax = fig.add_subplot(pos)
-    lengths_flat = [0.0] + [l for node in rrtstar_dubins_energy.found_path[1:] for l in node.course_lengths]
-    velocities_flat = [rrtstar_dubins_energy.start.velocity] + [v for node in rrtstar_dubins_energy.found_path[1:] for v in node.segment_velocities]
+    lengths_flat = [0.0] + [l for node in rrtstar_dubins_power.found_path[1:] for l in node.course_lengths]
+    velocities_flat = [rrtstar_dubins_power.start.velocity] + [v for node in rrtstar_dubins_power.found_path[1:] for v in node.segment_velocities]
 
     x = np.cumsum(lengths_flat)
     y = velocities_flat
@@ -370,11 +371,11 @@ def show_velocity_over_trajectory_length(fig, pos, rrtstar_dubins_energy, title:
     plt.grid(True)
     return ax
 
-def show_energy_consumption_over_trajectory_length(fig, pos, rrtstar_dubins_energy, title: str):
+def show_power_consumption_over_trajectory_length(fig, pos, rrtstar_dubins_power, title: str):
     ax = fig.add_subplot(pos)
     
-    lengths_flat = [0.0] + [l for node in rrtstar_dubins_energy.found_path[1:] for l in node.course_lengths]
-    cost_flat = [0.0] + [sg for node in rrtstar_dubins_energy.found_path[1:] for sg in node.segment_costs]
+    lengths_flat = [0.0] + [l for node in rrtstar_dubins_power.found_path[1:] for l in node.course_lengths]
+    cost_flat = [0.0] + [sg for node in rrtstar_dubins_power.found_path[1:] for sg in node.segment_costs]
 
     x = np.cumsum(lengths_flat)
     y = cost_flat
@@ -386,25 +387,41 @@ def show_energy_consumption_over_trajectory_length(fig, pos, rrtstar_dubins_ener
     plt.grid(True)
     return ax
 
-def show_energy_over_segment_index(fig, pos, rrtstar_dubins_energy, title: str):
+def show_power_over_segment_index(fig, pos, rrtstar_dubins_power, title: str):
     ax = fig.add_subplot(pos)
 
-    segment_i = [0] + [i for i in range(1, len([c for node in rrtstar_dubins_energy.found_path[1:] for c in node.segment_coordinates[0]])+1)]
-    cost_flat = [0.0] + [sg for node in rrtstar_dubins_energy.found_path[1:] for sg in node.segment_costs]
+    segment_i = [0] + [i for i in range(1, len([c for node in rrtstar_dubins_power.found_path[1:] for c in node.segment_coordinates[0]])+1)]
+    cost_flat = [0.0] + [sg for node in rrtstar_dubins_power.found_path[1:] for sg in node.segment_costs]
 
     x = segment_i
     y = cost_flat
 
     plt.plot(x, y, "-r")
-    plt.ylim(-5, 5)
+    
+    x_margin = (max(x) - min(x)) * 0.1
+    plt.xlim(min(x) - x_margin, max(x) + x_margin)
     plt.title(title)
-    plt.axis("equal")
     plt.grid(True)
     return ax
 
+def show_velocity_over_segment_index(fig, pos, rrtstar_dubins_power, title: str):
+    ax = fig.add_subplot(pos)
 
-def main():
-    print("Start RRT star with energy-optimized Dubins planning")
+    segment_i = [0] + [i for i in range(1, len([c for node in rrtstar_dubins_power.found_path[1:] for c in node.segment_coordinates[0]])+1)]
+    velocities = [rrtstar_dubins_power.start.velocity] + [v for node in rrtstar_dubins_power.found_path[1:] for v in node.segment_velocities]
+
+    x = segment_i
+    y = velocities
+
+    plt.plot(x, y, "-r")
+    x_margin = (max(x) - min(x)) * 0.1
+    plt.xlim(min(x) - x_margin, max(x) + x_margin)
+    plt.title(title)
+    plt.grid(True)
+    return ax
+
+def main(pickle_file_name: str):
+    print("Start RRT star with power-optimized Dubins planning")
 
     # ====Search Path with RRT====
     obstacleList = [
@@ -440,9 +457,9 @@ def main():
     start = [0.0, 0.0, np.deg2rad(0.0), 0.0]
     goal = [13.0, 13.0, np.deg2rad(0.0), 0.0]
 
-    energy_weights = {
+    power_weights = {
         'straight': 1.0,  # Standard straight segments
-        'turn': 2.0,      # Higher energy cost for turning segments
+        'turn': 2.0,      # Higher power cost for turning segments
         'switch': 1.0,    # Standard penalty for switching between modes
         'velocity': 0.1   # Standard velocity weight
     }
@@ -458,37 +475,66 @@ def main():
         start, goal, rand_area=[-2.0, 15.0], obstacle_list=obstacleList)
     standard_path = rrtstar_dubins.planning(animation=show_animation)
 
-    print("Running energy-optimized RRT* Dubins...")
-    rrtstar_dubins_energy = RRTStarDubinsEnergy(
+    print("Running power-optimized RRT* Dubins...")
+    rrtstar_dubins_power = RRTStarDubinsEnergy(
         start, goal, rand_area=[-2.0, 15.0], obstacle_list=obstacleList,
         velocity_range=velocity_range, velocity_step=velocity_step,
         curvature_search_range=curvature_search_range,
-        energy_weights=energy_weights)
-    energy_path, velocities, nodes_with_velocities = rrtstar_dubins_energy.planning(animation=show_animation)
+        power_weights=power_weights)
+    power_path, velocities, nodes_with_velocities = rrtstar_dubins_power.planning(animation=show_animation)
     print(f"velocities: {velocities}")
 
-    if show_animation:
-        fig2 = plt.figure(figsize=(10, 5))
-        ax5 = show_velocity_over_trajectory_length(fig2, 121, rrtstar_dubins_energy, "Velocity over trajectory length")
-        ax6 = show_energy_consumption_over_trajectory_length(fig2, 122, rrtstar_dubins_energy, "Energy over trajectory length")
+    # Store all necessary data for plotting: rrtstar_dubins, rrtstar_dubins_power, standard_path, power_path, obstacleList
+    data = {
+        "rrtstar_dubins": rrtstar_dubins,
+        "rrtstar_dubins_power": rrtstar_dubins_power,
+        "standard_path": standard_path,
+        "power_path": power_path,
+        "obstacleList": obstacleList
+    }
 
-        fig = plt.figure(figsize=(10, 5))
-        ax1 = show_final_2D_trajectory(fig, 121, rrtstar_dubins, obstacleList, standard_path, "Distance-based Path")
-        ax2 = show_final_2D_trajectory(fig, 122, rrtstar_dubins_energy, obstacleList, energy_path, "Energy-optimized Path")
-
-        fig3 = plt.figure(figsize=(10, 5))
-        ax3 = show_final_2D_trajectory(fig3, 121, rrtstar_dubins_energy, obstacleList, energy_path, "Energy-optimized Path")
-        ax4 = show_final_3D_trajectory(fig3, 122, rrtstar_dubins_energy, obstacleList, "Energy-optimized Path")
-
-        fig4 = plt.figure(figsize=(5,5))
-        ax7 = show_energy_over_segment_index(fig4, 121, rrtstar_dubins_energy, "Power over individual segments")
+    # Save data to a pickle file
+    with open(f'{pickle_file_name}.pkl', 'wb') as f:
+        pickle.dump(data, f)
 
 
-        plt.tight_layout()
-        plt.show()
+def show_plots(pickle_file_name: str):
+    # Load data from pickle file
+    with open(f'{pickle_file_name}.pkl', 'rb') as f:
+        data = pickle.load(f)
+
+    rrtstar_dubins = data["rrtstar_dubins"]
+    rrtstar_dubins_power = data["rrtstar_dubins_power"]
+    standard_path = data["standard_path"]
+    power_path = data["power_path"]
+    obstacleList = data["obstacleList"]
+
+    fig1 = plt.figure(figsize=(10, 5))
+    ax1 = show_velocity_over_trajectory_length(fig1, 121, rrtstar_dubins_power, "Velocity over trajectory length")
+    ax2 = show_power_consumption_over_trajectory_length(fig1, 122, rrtstar_dubins_power, "power over trajectory length")
+
+    fig2 = plt.figure(figsize=(10,5))
+    ax3 = show_velocity_over_segment_index(fig2, 121, rrtstar_dubins_power, "Velocity over individual segments")
+    ax4 = show_power_over_segment_index(fig2, 122, rrtstar_dubins_power, "Power over individual segments")
+
+    fig3 = plt.figure(figsize=(10, 5))
+    ax5 = show_final_2D_trajectory(fig3, 121, rrtstar_dubins, obstacleList, standard_path, "Distance-based Path")
+    ax6 = show_final_2D_trajectory(fig3, 122, rrtstar_dubins_power, obstacleList, power_path, "power-optimized Path")
+
+    fig4 = plt.figure(figsize=(10, 5))
+    ax7 = show_final_2D_trajectory(fig4, 121, rrtstar_dubins_power, obstacleList, power_path, "power-optimized Path")
+    ax8 = show_final_3D_trajectory(fig4, 122, rrtstar_dubins_power, obstacleList, "power-optimized Path")
+
+    plt.tight_layout()
+    plt.show()
 
 
 if __name__ == '__main__':
     # random.seed(199)
     # np.random.seed(199)
-    main()
+
+    path = pathlib.Path(__file__).parent
+    pickle_file_name = f"{path}/plots/debug_power_plots"
+
+    # main(pickle_file_name)
+    show_plots(pickle_file_name)
