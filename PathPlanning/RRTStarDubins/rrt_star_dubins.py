@@ -119,8 +119,7 @@ class RRTStarDubins(RRTStar):
             if node.parent:
                 plt.plot(node.path_x, node.path_y, "-g")
 
-        for (ox, oy, size) in self.obstacle_list:
-            plt.plot(ox, oy, "ok", ms=30 * size)
+        self.plot_obstacles()
 
         plt.plot(self.start.x, self.start.y, "xr")
         plt.plot(self.end.x, self.end.y, "xr")
@@ -132,6 +131,15 @@ class RRTStarDubins(RRTStar):
     def plot_start_goal_arrow(self):
         plot_arrow(self.start.x, self.start.y, self.start.yaw)
         plot_arrow(self.end.x, self.end.y, self.end.yaw)
+
+    def plot_obstacles(self):
+        for (ox, oy, size) in self.obstacle_list:
+            if isinstance(size, int) or isinstance(size, float):
+                plt.plot(ox, oy, "ok", ms=30 * size)
+            elif isinstance(size, tuple):
+                w, h = size
+                plt.plot([ox, ox - w, ox - w, ox, ox], [oy, oy, oy - h, oy - h, oy], "-k")
+                plt.fill([ox, ox - w, ox - w, ox, ox], [oy, oy, oy - h, oy - h, oy], "k")
 
     def steer(self, from_node, to_node):
 

@@ -1,7 +1,7 @@
 """
 
-Dubins path power-optimized planner code
-modified for power optimization
+Dubins path Energy-optimized planner code
+modified for Energy optimization
 
 """
 import sys
@@ -16,13 +16,12 @@ from utils.angle import angle_mod, rot_mat_2d
 
 show_animation = True
 
-
 def plan_dubins_path(s_x, s_y, s_yaw, s_velocity,
                      g_x, g_y, g_yaw, g_velocity,
                      curvature_search_range, step_size=0.1, selected_types=None,
-                     velocity_range=(0.0, 3.0), velocity_step=0.5, power_weights=None):
+                     velocity_range=(0.0, 3.0), velocity_step=0.5):
     """
-    Plan dubins path optimized for power consumption
+    Plan dubins path optimized for Energy consumption
 
     Parameters
     ----------
@@ -48,19 +47,13 @@ def plan_dubins_path(s_x, s_y, s_yaw, s_velocity,
         step size between two path points [m]. Default is 0.1
     selected_types : a list of string or None
         selected path planning types. If None, all types are used for
-        path planning, and minimum power cost result is returned.
+        path planning, and minimum Energy cost result is returned.
         You can select used path plannings types by a string list.
         e.g.: ["RSL", "RSR"]
     velocity_range : tuple of float
         range of velocities to consider for optimization (min, max) [m/s]
     velocity_step : float
         step size for velocity optimization [m/s]
-    power_weights : dict
-        weights for the power model components:
-        - 'straight': weight for straight segments
-        - 'turn': weight for turning segments 
-        - 'switch': penalty for switching between straight and turning
-        If None, defaults to predefined power weights
 
     Returns
     -------
@@ -84,15 +77,6 @@ def plan_dubins_path(s_x, s_y, s_yaw, s_velocity,
     else:
         planning_funcs = [_PATH_TYPE_MAP[ptype] for ptype in selected_types]
 
-    # Default power weights if not provided
-    if power_weights is None:
-        power_weights = {
-            'straight': 1.0,  # Base power cost for straight segments
-            'turn': 1.5,      # Higher power cost for turning segments
-            'switch': 0.5,    # Penalty for switching between modes
-            'velocity': 0.1   # Weight for velocity impact on power
-        }
-
     # Calculate local goal x, y, yaw
     l_rot = rot_mat_2d(s_yaw)
     le_xy = np.stack([g_x - s_x, g_y - s_y]).T @ l_rot
@@ -103,7 +87,7 @@ def plan_dubins_path(s_x, s_y, s_yaw, s_velocity,
     # AFTER: produce velocity_list right away along with other optimized parameters
     lp_x, lp_y, lp_yaw, velocity_list, modes, lengths, segment_velocities, lsegment_coordinates, path_cost = _dubins_path_planning_from_origin(
         local_goal_x, local_goal_y, local_goal_yaw, s_velocity, g_velocity, curvature_search_range, step_size,
-        planning_funcs, velocity_range, velocity_step, power_weights)
+        planning_funcs, velocity_range, velocity_step)
 
     # Convert a local coordinate path to the global coordinate
     rot = rot_mat_2d(-s_yaw)
@@ -212,9 +196,9 @@ _PATH_TYPE_MAP = {"LSL": _LSL, "RSR": _RSR, "LSR": _LSR, "RSL": _RSL,
                   "RLR": _RLR, "LRL": _LRL, }
 
 
-def _calculate_power_cost(d1, d2, d3, mode, v1, v2, v3, v4, curvature, power_weights):
+def _calculate_energy_cost(d1, d2, d3, mode, v1, v2, v3, v4, curvature):
     """
-    Calculate power cost based on the path segments and vehicle parameters
+    Calculate Energy cost based on the path segments and vehicle parameters
 
     Parameters
     ----------
@@ -229,8 +213,8 @@ def _calculate_power_cost(d1, d2, d3, mode, v1, v2, v3, v4, curvature, power_wei
         Curvature of right and left Dubin turns.
     Returns
     -------
-    power_cost : float
-        Total power cost for the path
+    energy_cost : float
+        Total Energy cost for the path
     """
     if d1 is None:
         return float('inf')
@@ -238,7 +222,7 @@ def _calculate_power_cost(d1, d2, d3, mode, v1, v2, v3, v4, curvature, power_wei
     segments = [d1, d2, d3]
     velocities = [v1, v2, v3, v4]
     radius = 1 / curvature
-    power_cost = 0.0
+    energy_cost = 0.0
     segment_costs = []
     gravity = 9.81
 
@@ -250,8 +234,9 @@ def _calculate_power_cost(d1, d2, d3, mode, v1, v2, v3, v4, curvature, power_wei
         time = 2 * distance / max((v_start + v_end), 0.0001)
 
         tangential_acceleration = abs((v_end**2 - v_start**2) / (2 * distance)) if distance > 0 else 0
-        velocity_mid = (sqrt(v_end) + sqrt(v_start)) / 2
-        centripetal_acceleration = (velocity_mid**2 / radius) if radius > 0 else 0
+
+        velocity_mid = (v_end**2 + v_start**2) / 2
+        centripetal_acceleration = (velocity_mid / radius) if radius > 0 else 0
         if segment_mode == "S":
             segment_acceleration = sqrt(tangential_acceleration**2 + gravity**2)
         else:
@@ -259,16 +244,17 @@ def _calculate_power_cost(d1, d2, d3, mode, v1, v2, v3, v4, curvature, power_wei
 
         # def time_integrand(time):
         #     pass
-    
-        # segment_power_consumption = quad(lambda t: segment_acceleration, 0, time)[0]
-        segment_power_consumption = abs(v_end -  1) + 0.005
-        power_cost += segment_power_consumption
-        segment_costs.append(segment_power_consumption)
 
-    return power_cost, segment_costs
+        # power = segment_acceleration
+        segment_energy_consumption = quad(lambda t: segment_acceleration, 0, time)[0]
+        # segment_energy_consumption = abs(v_end -  1) + 0.005
+        energy_cost += segment_energy_consumption
+        segment_costs.append(segment_energy_consumption)
+
+    return energy_cost, segment_costs
 
 def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end_velocity, curvature_search_range,
-                                      step_size, planning_funcs, velocity_range, velocity_step, power_weights):
+                                      step_size, planning_funcs, velocity_range, velocity_step):
     
     v1, v4 = start_velocity, end_velocity
     dx = end_x
@@ -283,11 +269,16 @@ def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end
     b_d1, b_d2, b_d3, b_mode = None, None, None, None
 
     # TODO: Obviously optimize this entire search below :)
-    # TODO: ASK LEONARD IF HE APPROVES: Completely ignoring Euclidian distance minimization, purely power based
+    # TODO: Try meshgrid opt -> either numpy or pytorch for use of even gpu possibly
     for planner in planning_funcs:
 
         # Search along different radius sizes for turns within path
         # 1 fixed radius for a whole path type (= for both turns of a path)
+
+        # curvature_tuples = [(tup, cur) for cur in curvature_search_range if (tup := planner(alpha, beta, hypot(dx, dy) * cur))[0] is not None]
+        # for tup, cur in curvature_tuples:
+        #     d1, d2, d3, mode = tup
+
         for cur in curvature_search_range:
             d = hypot(dx, dy) * cur
 
@@ -300,10 +291,10 @@ def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end
             for v2 in velocity_search_range:
                 for v3 in velocity_search_range:
                     # Calculate Power-based cost
-                    cost, segment_costs = _calculate_power_cost(
-                        d1, d2, d3, mode, v1, v2, v3, v4, cur, power_weights)
+                    cost, segment_costs = _calculate_energy_cost(
+                        d1, d2, d3, mode, v1, v2, v3, v4, cur)
 
-                    if best_cost > cost:  # Select minimum power cost path
+                    if best_cost > cost:  # Select minimum energy cost path
                         b_d1, b_d2, b_d3, b_v2, b_v3, b_mode, b_cur, best_cost, best_segment_costs = d1, d2, d3, v2, v3, mode, cur, cost, segment_costs
 
     segment_velocities = [v1, b_v2, b_v3, v4]
@@ -312,10 +303,6 @@ def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end
     lengths = [length / b_cur for length in lengths]
 
     return x_list, y_list, yaw_list, velocity_list, b_mode, lengths, segment_velocities, lsegment_coordinates, best_segment_costs
-
-import numpy as np
-
-import numpy as np
 
 def interpolate_velocities(p_x, p_y, segment_velocities, segment_coordinates_x, segment_coordinates_y, max_acc=1.0):
     """
@@ -460,14 +447,6 @@ def main():
 
     curvature = 1.0
 
-    # Define power weights
-    power_weights = {
-        'straight': 1.0,  # Base power cost for straight segments
-        'turn': 2,      # Higher power cost for turning segments
-        'switch': 0.5,    # Penalty for switching between modes
-        'velocity': 0.5   # Weight for velocity impact on power
-    }
-
     curvature_search_range = [0.3, 1.0, 1.5]
     velocity_range = (0.5, 3.0)  # [m/s]cur
     velocity_step = 0.5  # [m/s]
@@ -475,19 +454,18 @@ def main():
 
     # Distance based
     from PathPlanning.DubinsPath import dubins_path_planner
-    path_x, path_y, path_yaw, mode, lengths, power_cost, segment_power_costs = dubins_path_planner.plan_dubins_path(
+    path_x, path_y, path_yaw, mode, lengths, energy_cost, segment_energy_costs = dubins_path_planner.plan_dubins_path(
         start_x, start_y, start_yaw, end_x, end_y, end_yaw, curvature, step_size=step_size)
 
-    # power based
-    power_path_x, power_path_y, power_path_yaw, power_velocity_list, power_mode, power_lengths, segment_velocities, segment_coordinates, path_cost = plan_dubins_path(
+    # Energy based
+    energy_path_x, energy_path_y, energy_path_yaw, energy_velocity_list, energy_mode, energy_lengths, segment_velocities, segment_coordinates, path_cost = plan_dubins_path(
         start_x, start_y, start_yaw, start_velocity,
         end_x, end_y, end_yaw, end_velocity,
         curvature_search_range, step_size=step_size, selected_types=None,
-        velocity_range=velocity_range, velocity_step=velocity_step,
-        power_weights=power_weights)
+        velocity_range=velocity_range, velocity_step=velocity_step)
 
     print(
-        f"Optimal end velocitities for each power efficient path: {[round(v,2) for v in segment_velocities]} m/s")
+        f"Optimal end velocitities for each energy efficient path: {[round(v,2) for v in segment_velocities]} m/s")
 
     if show_animation:
         plt.figure(figsize=(10, 5))
@@ -502,16 +480,16 @@ def main():
         plt.axis("equal")
         plt.title("Distance-optimized path")
 
-        # Plot power-based path
+        # Plot energy-based path
         plt.subplot(122)
-        plt.plot(power_path_x, power_path_y,
-                 label=f"Path type: {''.join(power_mode)}, v={[round(v,2) for v in segment_velocities]} m/s")
+        plt.plot(energy_path_x, energy_path_y,
+                 label=f"Path type: {''.join(energy_mode)}, v={[round(v,2) for v in segment_velocities]} m/s")
         plot_arrow(start_x, start_y, start_yaw)
         plot_arrow(end_x, end_y, end_yaw)
         plt.legend()
         plt.grid(True)
         plt.axis("equal")
-        plt.title("power-optimized path with optimal velocity")
+        plt.title("energy-optimized path with optimal velocity")
 
         plt.tight_layout()
         plt.show()
