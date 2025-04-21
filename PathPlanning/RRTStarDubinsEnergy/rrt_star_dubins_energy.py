@@ -187,7 +187,7 @@ class RRTStarDubinsEnergy(RRTStar):
         """
         Generate a path from from_node to to_node using energy-optimized Dubins paths
         """
-        px, py, pyaw, pvelocities, mode, course_lengths, segment_velocities, segment_coordinates, path_cost = \
+        px, py, pyaw, pvelocities, mode, course_lengths, segment_velocities, segment_coordinates, segment_energy_costs, segment_power_costs = \
             dubins_path_energy_planner.plan_dubins_path(
                 from_node.x, from_node.y, from_node.yaw, from_node.velocity,
                 to_node.x, to_node.y, to_node.yaw, to_node.velocity,
@@ -207,13 +207,15 @@ class RRTStarDubinsEnergy(RRTStar):
         new_node.course_lengths = course_lengths
         new_node.segment_velocities = segment_velocities[1:]
         new_node.segment_coordinates = segment_coordinates
-        new_node.segment_costs = path_cost
+        new_node.segment_energy_costs = segment_energy_costs
+        new_node.segment_power_costs = segment_power_costs
 
         new_node.path_x = px
         new_node.path_y = py
         new_node.path_yaw = pyaw
         new_node.path_velocity = pvelocities
-        new_node.energy_cost = sum(path_cost)
+        new_node.path_energy_cost = sum(segment_energy_costs)
+        new_node.path_power_cost = sum(segment_power_costs)
         new_node.parent = from_node
 
         return new_node
@@ -222,14 +224,14 @@ class RRTStarDubinsEnergy(RRTStar):
         """
         Calculate energy cost of new Dubins path
         """
-        _, _, _, _, _, _, _, _, path_cost = dubins_path_energy_planner.plan_dubins_path(
+        _, _, _, _, _, _, _, _, segment_energy_costs, segment_power_costs = dubins_path_energy_planner.plan_dubins_path(
             from_node.x, from_node.y, from_node.yaw, from_node.velocity,
             to_node.x, to_node.y, to_node.yaw, to_node.velocity,
             self.curvature_search_range,
             velocity_range=self.velocity_range,
             velocity_step=self.velocity_step)
 
-        return from_node.cost + sum(path_cost)
+        return from_node.cost + sum(segment_energy_costs)
 
     def get_random_node(self):
         if random.randint(0, 100) > self.goal_sample_rate:
@@ -328,7 +330,7 @@ def show_final_2D_trajectory(fig, pos, rrtstar_dubins: RRTStar, path_found, titl
     path_y_nodes = [node.y for node in rrtstar_dubins.found_path]
     plt.plot(path_x_nodes[1:-1], path_y_nodes[1:-1], "or", alpha=0.5)
 
-    total_energy_cost = round(sum([node.energy_cost for node in rrtstar_dubins.found_path[1:]]), 2)
+    total_energy_cost = round(sum([node.path_energy_cost for node in rrtstar_dubins.found_path[1:]]), 2)
     plt.title(title + f" Total energy: {total_energy_cost}")
     plt.axis("equal")
     plt.grid(True)
@@ -389,7 +391,7 @@ def show_energy_consumption_over_trajectory_length(fig, pos, rrtstar_dubins_ener
     ax = fig.add_subplot(pos)
     
     lengths_flat = [0.0] + [l for node in rrtstar_dubins_energy.found_path[1:] for l in node.course_lengths]
-    cost_flat = [0.0] + [sg for node in rrtstar_dubins_energy.found_path[1:] for sg in node.segment_costs]
+    cost_flat = [0.0] + [sg for node in rrtstar_dubins_energy.found_path[1:] for sg in node.segment_energy_costs]
 
     x = np.cumsum(lengths_flat)
     y = cost_flat
@@ -405,10 +407,27 @@ def show_energy_over_segment_index(fig, pos, rrtstar_dubins_energy, title: str):
     ax = fig.add_subplot(pos)
 
     segment_i = [0] + [i for i in range(1, len([c for node in rrtstar_dubins_energy.found_path[1:] for c in node.segment_coordinates[0]])+1)]
-    cost_flat = [0.0] + [sg for node in rrtstar_dubins_energy.found_path[1:] for sg in node.segment_costs]
+    energy_cost_flat = [0.0] + [sg for node in rrtstar_dubins_energy.found_path[1:] for sg in node.segment_energy_costs]
 
     x = segment_i
-    y = cost_flat
+    y = energy_cost_flat
+
+    plt.plot(x, y, "-*r")
+    
+    x_margin = (max(x) - min(x)) * 0.1
+    plt.xlim(min(x) - x_margin, max(x) + x_margin)
+    plt.title(title)
+    plt.grid(True)
+    return ax
+
+def show_power_over_segment_index(fig, pos, rrtstar_dubins_energy, title: str):
+    ax = fig.add_subplot(pos)
+
+    segment_i = [0] + [i for i in range(1, len([c for node in rrtstar_dubins_energy.found_path[1:] for c in node.segment_coordinates[0]])+1)]
+    power_cost_flat = [0.0] + [sg for node in rrtstar_dubins_energy.found_path[1:] for sg in node.segment_power_costs]
+
+    x = segment_i
+    y = power_cost_flat
 
     plt.plot(x, y, "-*r")
     
@@ -427,7 +446,7 @@ def show_velocity_over_segment_index(fig, pos, rrtstar_dubins_energy, title: str
     x = segment_i
     y = velocities
 
-    plt.plot(x, y, "-r")
+    plt.plot(x, y, "-*r")
     x_margin = (max(x) - min(x)) * 0.1
     plt.xlim(min(x) - x_margin, max(x) + x_margin)
     plt.title(title)
@@ -458,7 +477,7 @@ def main(pickle_file_name: str, do_distance_based=True):
     goal = [13.0, 13.0, np.deg2rad(0.0), 0.0]
     
     curvature_search_range = (0.6, 1.0)
-    velocity_range = (0.5, 6.0)  # [m/s]
+    velocity_range = (0.5, 3.0)  # [m/s]
     velocity_step = 0.5  # [m/s]
 
     # Run planners
@@ -502,19 +521,24 @@ def show_plots(pickle_file_name: str):
     rrtstar_dubins_energy = data["rrtstar_dubins_energy"]
     energy_path = data["energy_path"]
 
-    fig1 = plt.figure(figsize=(10, 5))
-    ax1 = show_velocity_over_trajectory_length(fig1, 121, rrtstar_dubins_energy, "Velocity over trajectory length")
-    ax2 = show_energy_consumption_over_trajectory_length(fig1, 122, rrtstar_dubins_energy, "Energy over trajectory length")
+    # Show velocity and energy over trajectory length
+    # fig1 = plt.figure(figsize=(10, 5))
+    # ax1 = show_velocity_over_trajectory_length(fig1, 121, rrtstar_dubins_energy, "Velocity over trajectory length")
+    # ax2 = show_energy_consumption_over_trajectory_length(fig1, 122, rrtstar_dubins_energy, "Energy over trajectory length")
 
-    fig2 = plt.figure(figsize=(10,5))
-    ax3 = show_velocity_over_segment_index(fig2, 121, rrtstar_dubins_energy, "Velocity over individual segments")
-    ax4 = show_energy_over_segment_index(fig2, 122, rrtstar_dubins_energy, "Energy over individual segments")
-
-    fig3 = plt.figure(figsize=(10, 5))
+    # Compare distance-based and energy-optimized paths
     if rrtstar_dubins and standard_path:
+        fig3 = plt.figure(figsize=(10, 5))
         ax5 = show_final_2D_trajectory(fig3, 121, rrtstar_dubins, standard_path, "Distance-based Path")
-    ax6 = show_final_2D_trajectory(fig3, 122, rrtstar_dubins_energy, energy_path, "Energy-optimized Path")
+        ax6 = show_final_2D_trajectory(fig3, 122, rrtstar_dubins_energy, energy_path, "Energy-optimized Path")
 
+    # Show velocity, energy and power over segment index
+    fig2 = plt.figure(figsize=(15,5))
+    ax3 = show_velocity_over_segment_index(fig2, 131, rrtstar_dubins_energy, "Velocity over individual segments")
+    ax4 = show_energy_over_segment_index(fig2, 132, rrtstar_dubins_energy, "Energy over individual segments")
+    ax34 = show_power_over_segment_index(fig2, 133, rrtstar_dubins_energy, "Power over individual segments")
+
+    # Show final 2D and 3D trajectories for energy-optimized path
     fig4 = plt.figure(figsize=(10, 5))
     ax7 = show_final_2D_trajectory(fig4, 121, rrtstar_dubins_energy, energy_path, "Energy-optimized Path")
     ax8 = show_final_3D_trajectory(fig4, 122, rrtstar_dubins_energy, "Energy-optimized Path")
@@ -524,23 +548,23 @@ def show_plots(pickle_file_name: str):
 
 
 if __name__ == '__main__':
-    from datetime import datetime
+    import time
 
     random.seed(198)
     np.random.seed(198)
 
     path = pathlib.Path(__file__).parent
-    pickle_file_name = f"{path}/plots/rectangle_obstacles_T_2"
+    pickle_file_name = f"{path}/plots/rectangle_obstacles_improved_inner_loop"
+
+    # rectangle_obstacles --> No optimization, without distance based, vel_range(0.5, 3.0), vel_step=0.5 --> Runtime: 159.74 seconds
 
     # rectangle_obstacles_T --> Without any optimization, without distance based, and vel_range(0.5, 6.0), vel_step=0.5 --> Runtime: 2:41 minutes
     # rectangle_obstacles_T_1 --> Without only tuples opt, without distance based, and vel_range(0.5, 6.0), vel_step=0.5 --> Runtime: 5:39 minutes
     # rectangle_obstacles_T_2 --> Only meshgrid opt without distance based, and vel_range(0.5, 6.0), vel_step=0.5 --> Runtime: 
 
-    start=datetime.now()
-
+    start=time.time()
     main(pickle_file_name, do_distance_based=False)
+    end = time.time()-start
+    print(f"Runtime: {round(end, 2)} seconds")
 
-    end = datetime.now()-start
-    print(f"Runtime: {end}")
-
-    show_plots(pickle_file_name)
+    # show_plots(pickle_file_name)

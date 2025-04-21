@@ -69,8 +69,14 @@ def plan_dubins_path(s_x, s_y, s_yaw, s_velocity,
         mode list of the path
     lengths: array
         length list of the path segments.
-    path_cost: float
-        cost of Dubin path (summed cost of 3 segments)
+    segment_velocities: array
+        velocity list of the path segments.
+    segment_coordinates: array
+        coordinates list of the path segments.
+    segment_energy_costs: array
+        energy cost list of the path segments.
+    segment_power_costs: array
+        power cost list of the path segments.
     """
     if selected_types is None:
         planning_funcs = _PATH_TYPE_MAP.values()
@@ -85,7 +91,7 @@ def plan_dubins_path(s_x, s_y, s_yaw, s_velocity,
     local_goal_yaw = g_yaw - s_yaw
 
     # AFTER: produce velocity_list right away along with other optimized parameters
-    lp_x, lp_y, lp_yaw, velocity_list, modes, lengths, segment_velocities, lsegment_coordinates, path_cost = _dubins_path_planning_from_origin(
+    lp_x, lp_y, lp_yaw, velocity_list, modes, lengths, segment_velocities, lsegment_coordinates, segment_energy_costs, segment_power_costs = _dubins_path_planning_from_origin(
         local_goal_x, local_goal_y, local_goal_yaw, s_velocity, g_velocity, curvature_search_range, step_size,
         planning_funcs, velocity_range, velocity_step)
 
@@ -102,7 +108,7 @@ def plan_dubins_path(s_x, s_y, s_yaw, s_velocity,
     segment_coordinates_y = converted_segment_coordinates[:, 1] + s_y
     segment_coordinates = (segment_coordinates_x, segment_coordinates_y)
 
-    return x_list, y_list, yaw_list, velocity_list, modes, lengths, segment_velocities, segment_coordinates, path_cost
+    return x_list, y_list, yaw_list, velocity_list, modes, lengths, segment_velocities, segment_coordinates, segment_energy_costs, segment_power_costs
 
 def _mod2pi(theta):
     return angle_mod(theta, zero_2_2pi=True)
@@ -215,6 +221,10 @@ def _calculate_energy_cost(d1, d2, d3, mode, v1, v2, v3, v4, curvature):
     -------
     energy_cost : float
         Total Energy cost for the path
+    segment_energy_costs : list of float
+        Energy cost for each segment
+    segment_power_costs : list of float
+        Power cost for each segment
     """
     if d1 is None:
         return float('inf')
@@ -223,7 +233,8 @@ def _calculate_energy_cost(d1, d2, d3, mode, v1, v2, v3, v4, curvature):
     velocities = [v1, v2, v3, v4]
     radius = 1 / curvature
     energy_cost = 0.0
-    segment_costs = []
+    segment_energy_costs = []
+    segment_power_costs = []
     gravity = 9.81
 
     for i, (segment_mode, distance) in enumerate(zip(mode, segments)):
@@ -242,16 +253,15 @@ def _calculate_energy_cost(d1, d2, d3, mode, v1, v2, v3, v4, curvature):
         else:
             segment_acceleration = sqrt(tangential_acceleration**2 + gravity**2 + centripetal_acceleration**2)
 
-        # def time_integrand(time):
-        #     pass
+        segment_power_consumption = segment_acceleration
+        # segment_energy_consumption = abs(v_end -  1) + 0.005 # For debugging only
+        segment_energy_consumption = quad(lambda t: segment_power_consumption, 0, time)[0]
 
-        # power = segment_acceleration
-        segment_energy_consumption = quad(lambda t: segment_acceleration, 0, time)[0]
-        # segment_energy_consumption = abs(v_end -  1) + 0.005
         energy_cost += segment_energy_consumption
-        segment_costs.append(segment_energy_consumption)
+        segment_energy_costs.append(segment_energy_consumption)
+        segment_power_costs.append(segment_power_consumption)
 
-    return energy_cost, segment_costs
+    return energy_cost, segment_energy_costs, segment_power_costs
 
 def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end_velocity, curvature_search_range,
                                       step_size, planning_funcs, velocity_range, velocity_step):
@@ -265,7 +275,8 @@ def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end
     beta = _mod2pi(end_yaw - theta)
 
     best_cost = float("inf")
-    best_segment_costs = []
+    best_segment_energy_costs = []
+    best_segment_power_costs = []
     b_d1, b_d2, b_d3, b_mode = None, None, None, None
 
     # TODO: Obviously optimize this entire search below :)
@@ -291,18 +302,18 @@ def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end
             for v2 in velocity_search_range:
                 for v3 in velocity_search_range:
                     # Calculate Power-based cost
-                    cost, segment_costs = _calculate_energy_cost(
+                    cost, segment_energy_costs, segment_power_costs = _calculate_energy_cost(
                         d1, d2, d3, mode, v1, v2, v3, v4, cur)
 
                     if best_cost > cost:  # Select minimum energy cost path
-                        b_d1, b_d2, b_d3, b_v2, b_v3, b_mode, b_cur, best_cost, best_segment_costs = d1, d2, d3, v2, v3, mode, cur, cost, segment_costs
+                        b_d1, b_d2, b_d3, b_v2, b_v3, b_mode, b_cur, best_cost, best_segment_energy_costs, best_segment_power_costs = d1, d2, d3, v2, v3, mode, cur, cost, segment_energy_costs, segment_power_costs
 
     segment_velocities = [v1, b_v2, b_v3, v4]
     lengths = [b_d1, b_d2, b_d3]
     x_list, y_list, yaw_list, velocity_list, lsegment_coordinates = _generate_local_course(lengths, b_mode, b_cur, step_size, segment_velocities)
     lengths = [length / b_cur for length in lengths]
 
-    return x_list, y_list, yaw_list, velocity_list, b_mode, lengths, segment_velocities, lsegment_coordinates, best_segment_costs
+    return x_list, y_list, yaw_list, velocity_list, b_mode, lengths, segment_velocities, lsegment_coordinates, best_segment_energy_costs, best_segment_power_costs
 
 def interpolate_velocities(p_x, p_y, segment_velocities, segment_coordinates_x, segment_coordinates_y, max_acc=1.0):
     """
@@ -458,7 +469,9 @@ def main():
         start_x, start_y, start_yaw, end_x, end_y, end_yaw, curvature, step_size=step_size)
 
     # Energy based
-    energy_path_x, energy_path_y, energy_path_yaw, energy_velocity_list, energy_mode, energy_lengths, segment_velocities, segment_coordinates, path_cost = plan_dubins_path(
+    energy_path_x, energy_path_y, energy_path_yaw, energy_velocity_list, \
+        energy_mode, energy_lengths, segment_velocities, segment_coordinates, \
+            segment_energy_costs, segment_power_costs = plan_dubins_path(
         start_x, start_y, start_yaw, start_velocity,
         end_x, end_y, end_yaw, end_velocity,
         curvature_search_range, step_size=step_size, selected_types=None,
