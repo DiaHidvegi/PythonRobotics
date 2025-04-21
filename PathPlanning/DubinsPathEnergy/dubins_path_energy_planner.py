@@ -12,7 +12,7 @@ from math import sin, cos, atan2, sqrt, acos, pi, hypot, sqrt
 from scipy.integrate import quad
 import numpy as np
 from utils.angle import angle_mod, rot_mat_2d
-
+import multiprocessing
 
 show_animation = True
 
@@ -263,57 +263,220 @@ def _calculate_energy_cost(d1, d2, d3, mode, v1, v2, v3, v4, curvature):
 
     return energy_cost, segment_energy_costs, segment_power_costs
 
+
+
+# SECOND TRIAL:
+# - Add curvature to grid based processing as well (3 inner loops in meshgrid)
+
+def _worker_function(planner, alpha, beta, hypot_dx_dy, v1, v2_val, v3_val, v4, cur_val):
+    '''
+    Worker function for multiprocessing that can be used by multiple processes.
+    
+    Parameters
+    ----------
+    planner, alpha, beta, hypot_dx_dy, v1, v2_val, v3_val, v4, cur_val
+        
+    Returns
+    -------
+    tuple
+        (energy_cost, segment_energy_costs, segment_power_costs, d1, d2, d3, mode, v2_val, v3_val, cur)
+    '''
+    
+    d1, d2, d3, mode = planner(alpha, beta, hypot_dx_dy * cur_val)
+    if d1 is None:
+        return float('inf'), None
+    
+    # Return all the data needed to update the shared data
+    energy_cost, segment_energy_costs, segment_power_costs = _calculate_energy_cost(d1, d2, d3, mode, v1, v2_val, v3_val, v4, cur_val)
+
+    return(energy_cost, segment_energy_costs, segment_power_costs, d1, d2, d3, mode, v2_val, v3_val, cur_val)
+
+
 def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end_velocity, curvature_search_range,
                                       step_size, planning_funcs, velocity_range, velocity_step):
     
     v1, v4 = start_velocity, end_velocity
     dx = end_x
     dy = end_y
+    hypot_dx_dy = hypot(dx, dy)
 
     theta = _mod2pi(atan2(dy, dx))
     alpha = _mod2pi(-theta)
     beta = _mod2pi(end_yaw - theta)
 
     best_cost = float("inf")
+    best_result = None
     best_segment_energy_costs = []
     best_segment_power_costs = []
     b_d1, b_d2, b_d3, b_mode = None, None, None, None
 
     # TODO: Obviously optimize this entire search below :)
     # TODO: Try meshgrid opt -> either numpy or pytorch for use of even gpu possibly
+
+    velocity_search_range = np.arange(velocity_range[0], velocity_range[-1]+velocity_step, velocity_step)
+    v2, v3, cur = np.meshgrid(velocity_search_range, velocity_search_range, curvature_search_range)
+    combinations = np.column_stack((v2.ravel(), v3.ravel(), cur.ravel()))
+
     for planner in planning_funcs:
+        with multiprocessing.Pool(processes=14) as pool:
+            inputs = [(planner, alpha, beta, hypot_dx_dy, v1, c[0], c[1], v4, c[2]) for c in combinations]
+            
+            results = pool.starmap(_worker_function, inputs)
 
-        # Search along different radius sizes for turns within path
-        # 1 fixed radius for a whole path type (= for both turns of a path)
+            # Find the result with the lowest cost
+            lowest_cost_result = min(results, key=lambda x: x[0])
+            current_lowest_cost = lowest_cost_result[0]
 
-        # curvature_tuples = [(tup, cur) for cur in curvature_search_range if (tup := planner(alpha, beta, hypot(dx, dy) * cur))[0] is not None]
-        # for tup, cur in curvature_tuples:
-        #     d1, d2, d3, mode = tup
+            if current_lowest_cost < best_cost:
+                best_cost = current_lowest_cost
+                best_result = lowest_cost_result
 
-        for cur in curvature_search_range:
-            d = hypot(dx, dy) * cur
-
-            d1, d2, d3, mode = planner(alpha, beta, d)
-            if d1 is None:
-                continue
-
-            # Sample the intermediate velocities within path
-            velocity_search_range = np.arange(velocity_range[0], velocity_range[-1]+velocity_step, velocity_step)
-            for v2 in velocity_search_range:
-                for v3 in velocity_search_range:
-                    # Calculate Power-based cost
-                    cost, segment_energy_costs, segment_power_costs = _calculate_energy_cost(
-                        d1, d2, d3, mode, v1, v2, v3, v4, cur)
-
-                    if best_cost > cost:  # Select minimum energy cost path
-                        b_d1, b_d2, b_d3, b_v2, b_v3, b_mode, b_cur, best_cost, best_segment_energy_costs, best_segment_power_costs = d1, d2, d3, v2, v3, mode, cur, cost, segment_energy_costs, segment_power_costs
-
+    best_cost, best_segment_energy_costs, best_segment_power_costs, b_d1, b_d2, b_d3, b_mode, b_v2, b_v3, b_cur = best_result
     segment_velocities = [v1, b_v2, b_v3, v4]
     lengths = [b_d1, b_d2, b_d3]
     x_list, y_list, yaw_list, velocity_list, lsegment_coordinates = _generate_local_course(lengths, b_mode, b_cur, step_size, segment_velocities)
     lengths = [length / b_cur for length in lengths]
 
     return x_list, y_list, yaw_list, velocity_list, b_mode, lengths, segment_velocities, lsegment_coordinates, best_segment_energy_costs, best_segment_power_costs
+
+"""
+# FIRST TRIAL:
+
+# Lessons learned:
+# - multiprocessing is not faster than single core --> Likely because of the small size of the velocity space (small number of tasks)
+# - using meshgrid is not faster than just iterating over the curvature search range 
+# - using multiprocessing.Pool(processes=3) is faster than multiprocessing.Pool(processes=10)
+
+def _worker_function(d1, d2, d3, mode, v1, v2_val, v3_val, v4, cur):
+    '''
+    Worker function for multiprocessing that can be used by multiple processes.
+    
+    Parameters
+    ----------
+    d1, d2, d3, mode, v1, v2_val, v3_val, v4, cur
+        
+    Returns
+    -------
+    tuple
+        (energy_cost, segment_energy_costs, segment_power_costs, d1, d2, d3, mode, v2_val, v3_val, cur)
+    '''
+    
+    # Return all the data needed to update the shared data
+    energy_cost, segment_energy_costs, segment_power_costs = _calculate_energy_cost(d1, d2, d3, mode, v1, v2_val, v3_val, v4, cur)
+
+    return(energy_cost, segment_energy_costs, segment_power_costs, d1, d2, d3, mode, v2_val, v3_val, cur)
+
+# def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end_velocity, curvature_search_range,
+#                                       step_size, planning_funcs, velocity_range, velocity_step):
+    
+#     v1, v4 = start_velocity, end_velocity
+#     dx = end_x
+#     dy = end_y
+#     hypot_dx_dy = hypot(dx, dy)
+
+#     theta = _mod2pi(atan2(dy, dx))
+#     alpha = _mod2pi(-theta)
+#     beta = _mod2pi(end_yaw - theta)
+
+#     best_cost = float("inf")
+#     best_result = None
+#     best_segment_energy_costs = []
+#     best_segment_power_costs = []
+#     b_d1, b_d2, b_d3, b_mode = None, None, None, None
+
+#     # TODO: Obviously optimize this entire search below :)
+#     # TODO: Try meshgrid opt -> either numpy or pytorch for use of even gpu possibly
+
+#     velocity_search_range = np.arange(velocity_range[0], velocity_range[-1]+velocity_step, velocity_step)
+#     v2, v3 = np.meshgrid(velocity_search_range, velocity_search_range)
+#     velocity_pairs = np.column_stack((v2.ravel(), v3.ravel()))
+
+#     for planner in planning_funcs: 
+
+#         # Search along different radius sizes for turns within path
+#         # 1 fixed radius for a whole path type (= for both turns of a path)
+
+#         # tuples = [(*planner(alpha, beta, hypot_dx_dy * cur), cur) for cur in curvature_search_range]
+#         # for d1, d2, d3, mode, cur in tuples:
+#         #     if d1 is None:
+#         #         continue
+
+#         for cur in curvature_search_range:
+#             d1, d2, d3, mode = planner(alpha, beta, hypot_dx_dy * cur)
+#             if d1 is None:
+#                 continue
+
+#             # Sample the intermediate velocities within path
+#             with multiprocessing.Pool(processes=3) as pool:
+#                 inputs = [(d1, d2, d3, mode, v1, pair[0], pair[1], v4, cur) for pair in velocity_pairs]
+                
+#                 results = pool.starmap(_worker_function, inputs)
+
+#                 # Find the result with the lowest cost
+#                 lowest_cost_result = min(results, key=lambda x: x[0])
+#                 current_lowest_cost = lowest_cost_result[0]
+
+#                 if current_lowest_cost < best_cost:
+#                     best_cost = current_lowest_cost
+#                     best_result = lowest_cost_result
+
+#     best_cost, best_segment_energy_costs, best_segment_power_costs, b_d1, b_d2, b_d3, b_mode, b_v2, b_v3, b_cur = best_result
+#     segment_velocities = [v1, b_v2, b_v3, v4]
+#     lengths = [b_d1, b_d2, b_d3]
+#     x_list, y_list, yaw_list, velocity_list, lsegment_coordinates = _generate_local_course(lengths, b_mode, b_cur, step_size, segment_velocities)
+#     lengths = [length / b_cur for length in lengths]
+
+#     return x_list, y_list, yaw_list, velocity_list, b_mode, lengths, segment_velocities, lsegment_coordinates, best_segment_energy_costs, best_segment_power_costs
+"""
+
+# BEFORE:
+# def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end_velocity, curvature_search_range,
+#                                       step_size, planning_funcs, velocity_range, velocity_step):
+    
+#     v1, v4 = start_velocity, end_velocity
+#     dx = end_x
+#     dy = end_y
+
+#     theta = _mod2pi(atan2(dy, dx))
+#     alpha = _mod2pi(-theta)
+#     beta = _mod2pi(end_yaw - theta)
+
+#     best_cost = float("inf")
+#     best_segment_energy_costs = []
+#     best_segment_power_costs = []
+#     b_d1, b_d2, b_d3, b_mode = None, None, None, None
+
+#     # TODO: Obviously optimize this entire search below :)
+#     # TODO: Try meshgrid opt -> either numpy or pytorch for use of even gpu possibly
+#     for planner in planning_funcs: 
+
+#         # Search along different radius sizes for turns within path
+#         # 1 fixed radius for a whole path type (= for both turns of a path)
+
+#         for cur in curvature_search_range:
+#             d = hypot(dx, dy) * cur
+
+#             d1, d2, d3, mode = planner(alpha, beta, d)
+#             if d1 is None:
+#                 continue
+
+#             # Sample the intermediate velocities within path
+#             velocity_search_range = np.arange(velocity_range[0], velocity_range[-1]+velocity_step, velocity_step)
+#             for v2 in velocity_search_range:
+#                 for v3 in velocity_search_range:
+#                     # Calculate Power-based cost
+#                     cost, segment_energy_costs, segment_power_costs = _calculate_energy_cost(
+#                         d1, d2, d3, mode, v1, v2, v3, v4, cur)
+
+#                     if best_cost > cost:  # Select minimum energy cost path
+#                         b_d1, b_d2, b_d3, b_v2, b_v3, b_mode, b_cur, best_cost, best_segment_energy_costs, best_segment_power_costs = d1, d2, d3, v2, v3, mode, cur, cost, segment_energy_costs, segment_power_costs
+
+#     segment_velocities = [v1, b_v2, b_v3, v4]
+#     lengths = [b_d1, b_d2, b_d3]
+#     x_list, y_list, yaw_list, velocity_list, lsegment_coordinates = _generate_local_course(lengths, b_mode, b_cur, step_size, segment_velocities)
+#     lengths = [length / b_cur for length in lengths]
+
+#     return x_list, y_list, yaw_list, velocity_list, b_mode, lengths, segment_velocities, lsegment_coordinates, best_segment_energy_costs, best_segment_power_costs
 
 def interpolate_velocities(p_x, p_y, segment_velocities, segment_coordinates_x, segment_coordinates_y, max_acc=1.0):
     """
@@ -445,6 +608,7 @@ def main():
     print("Dubins path planner sample start!!")
     import matplotlib.pyplot as plt
     from utils.plot import plot_arrow
+    import time
 
     start_x = 1.0  # [m]
     start_y = 1.0  # [m]
@@ -458,24 +622,34 @@ def main():
 
     curvature = 1.0
 
-    curvature_search_range = [0.3, 1.0, 1.5]
-    velocity_range = (0.5, 3.0)  # [m/s]cur
+    curvature_search_range = (0.6, 1.0)
+    velocity_range = (0.5, 6.0)  # [m/s]
     velocity_step = 0.5  # [m/s]
+
     step_size=0.05
 
     # Distance based
     from PathPlanning.DubinsPath import dubins_path_planner
-    path_x, path_y, path_yaw, mode, lengths, energy_cost, segment_energy_costs = dubins_path_planner.plan_dubins_path(
+    path_x, path_y, path_yaw, mode, lengths, energy_cost, segment_energy_costs, segment_power_costs = dubins_path_planner.plan_dubins_path(
         start_x, start_y, start_yaw, end_x, end_y, end_yaw, curvature, step_size=step_size)
 
     # Energy based
+    start_time = time.time()
     energy_path_x, energy_path_y, energy_path_yaw, energy_velocity_list, \
         energy_mode, energy_lengths, segment_velocities, segment_coordinates, \
             segment_energy_costs, segment_power_costs = plan_dubins_path(
         start_x, start_y, start_yaw, start_velocity,
         end_x, end_y, end_yaw, end_velocity,
-        curvature_search_range, step_size=step_size, selected_types=None,
+        curvature_search_range, selected_types=None,
         velocity_range=velocity_range, velocity_step=velocity_step)
+    end_time = time.time()
+    print(f"Energy based path planning time: {round(end_time - start_time, 5)} seconds, Best cost: {round(sum(segment_energy_costs), 5)}")
+
+    # Baseline Configs:
+    # curvature_search_range = (0.6, 1.0)
+    # velocity_range = (0.5, 6.0)  # [m/s]
+    # velocity_step = 0.5  # [m/s]
+    # Baseline Runtime: 0.01579 seconds, Best cost: 25.2071
 
     print(
         f"Optimal end velocitities for each energy efficient path: {[round(v,2) for v in segment_velocities]} m/s")

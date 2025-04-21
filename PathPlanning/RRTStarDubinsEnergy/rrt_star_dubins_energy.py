@@ -556,7 +556,7 @@ if __name__ == '__main__':
     path = pathlib.Path(__file__).parent
     pickle_file_name = f"{path}/plots/rectangle_obstacles_improved_inner_loop"
 
-    # rectangle_obstacles --> No optimization, without distance based, vel_range(0.5, 3.0), vel_step=0.5 --> Runtime: 159.74 seconds
+    # rectangle_obstacles --> No optimization, without distance based, vel_range(0.5, 3.0), vel_step=0.5 --> Runtime: 62.71, 63.32, 81.99, 159.74 seconds
 
     # rectangle_obstacles_T --> Without any optimization, without distance based, and vel_range(0.5, 6.0), vel_step=0.5 --> Runtime: 2:41 minutes
     # rectangle_obstacles_T_1 --> Without only tuples opt, without distance based, and vel_range(0.5, 6.0), vel_step=0.5 --> Runtime: 5:39 minutes
