@@ -457,24 +457,30 @@ def main(pickle_file_name: str, do_distance_based=True):
     print("Start RRT star with energy-optimized Dubins planning")
 
     # ====Search Path with RRT====
-    obstacleList = [
-        (5, 5, (2, 2)),
-        (3, 6, (2, 2)),
-        (3, 8, (2, 2)),
-        (3, 10, (2, 2)),
-        (7, 5, (2, 2)),
-        (9, 5, (2, 2)),
-    ]  # [x,y,size(width, height)]
 
+    obstacleList = [
+        (0, 12, (2, 2)),
+        (0, 14, (2, 2)),
+        (2, 14, (2, 2)),
+        (4, 14, (2, 2)),
+        (6, 14, (2, 2)),
+        (6, 12, (2, 2)),
+        (6, 10, (2, 2)),
+        (6, 8, (2, 2)),
+        (8, 8, (2, 2))
+    ]
+    
     # obstacleList = [
-    #     (7, 14, (2, 2)),
-    #     (10, 10, (2, 2)),
-    #     (8, 12, (2, 2)),
-    #     (12, 9, (2, 2)),
-    # ]
+    #     (5, 5, (2, 2)),
+    #     (3, 6, (2, 2)),
+    #     (3, 8, (2, 2)),
+    #     (3, 10, (2, 2)),
+    #     (7, 5, (2, 2)),
+    #     (9, 5, (2, 2)),
+    # ]  # [x,y,size(width, height)]
 
     start = [0.0, 0.0, np.deg2rad(0.0), 0.0] # x, y, yaw, velocity
-    goal = [13.0, 13.0, np.deg2rad(0.0), 0.0]
+    goal = [12.0, 12.0, np.deg2rad(0.0), 0.0]
     
     curvature_search_range = (0.6, 1.0)
     velocity_range = (0.5, 3.0)  # [m/s]
@@ -562,9 +568,9 @@ if __name__ == '__main__':
     # rectangle_obstacles_T_1 --> Without only tuples opt, without distance based, and vel_range(0.5, 6.0), vel_step=0.5 --> Runtime: 5:39 minutes
     # rectangle_obstacles_T_2 --> Only meshgrid opt without distance based, and vel_range(0.5, 6.0), vel_step=0.5 --> Runtime: 
 
-    start=time.time()
-    main(pickle_file_name, do_distance_based=False)
-    end = time.time()-start
-    print(f"Runtime: {round(end, 2)} seconds")
+    # start=time.time()
+    # main(pickle_file_name, do_distance_based=False)
+    # end = time.time()-start
+    # print(f"Runtime: {round(end, 2)} seconds")
 
-    # show_plots(pickle_file_name)
+    show_plots(pickle_file_name)
