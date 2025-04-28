@@ -232,7 +232,7 @@ def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, curvature,
     lengths = [length / curvature for length in lengths]
 
     if calculate_energy:
-        energy_cost, segment_energy_costs, segment_power_costs = _calculate_energy_cost(b_d1, b_d2, b_d3, b_mode, v1, v2, v3, v4, curvature)
+        energy_cost, segment_energy_costs, segment_power_costs = _calculate_energy_cost(b_d1, b_d2, b_d3, b_mode, v1, np.array([v2]), np.array([v3]), v4, curvature)
 
     return x_list, y_list, yaw_list, b_mode, lengths, energy_cost, segment_energy_costs, segment_power_costs
 

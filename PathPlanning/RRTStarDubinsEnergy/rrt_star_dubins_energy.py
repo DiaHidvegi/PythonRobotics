@@ -330,7 +330,7 @@ def show_final_2D_trajectory(fig, pos, rrtstar_dubins: RRTStar, path_found, titl
     path_y_nodes = [node.y for node in rrtstar_dubins.found_path]
     plt.plot(path_x_nodes[1:-1], path_y_nodes[1:-1], "or", alpha=0.5)
 
-    total_energy_cost = round(sum([node.path_energy_cost for node in rrtstar_dubins.found_path[1:]]), 2)
+    total_energy_cost = np.round(np.sum([node.path_energy_cost for node in rrtstar_dubins.found_path[1:]]), 2)
     plt.title(title + f" Total energy: {total_energy_cost}")
     plt.axis("equal")
     plt.grid(True)
@@ -354,10 +354,10 @@ def show_final_3D_trajectory(fig, pos, rrtstar_dubins: RRTStar, title: str):
     plt.plot(path_x_nodes[1:-1], path_y_nodes[1:-1], path_z_nodes[1:-1], "or", alpha=0.5)
 
     # Segment velocities
-    path_x_segment = [rrtstar_dubins.start.x] + [x for node in rrtstar_dubins.found_path[1:] for x in node.segment_coordinates[0]]
-    path_y_segment = [rrtstar_dubins.start.y] + [y for node in rrtstar_dubins.found_path[1:] for y in node.segment_coordinates[1]]
-    path_z_segment = [rrtstar_dubins.start.velocity] + [vel for node in rrtstar_dubins.found_path[1:] for vel in node.segment_velocities]
-    plt.plot(path_x_segment, path_y_segment, path_z_segment, "-b", linewidth=2)
+    # path_x_segment = [rrtstar_dubins.start.x] + [x for node in rrtstar_dubins.found_path[1:] for x in node.segment_coordinates[0]]
+    # path_y_segment = [rrtstar_dubins.start.y] + [y for node in rrtstar_dubins.found_path[1:] for y in node.segment_coordinates[1]]
+    # path_z_segment = [rrtstar_dubins.start.velocity] + [vel for node in rrtstar_dubins.found_path[1:] for vel in node.segment_velocities]
+    # plt.plot(path_x_segment, path_y_segment, path_z_segment, "-b", linewidth=2)
 
     # Interpolated velocities
     path_x = [x for node in rrtstar_dubins.found_path for x in node.path_x]
@@ -458,32 +458,31 @@ def main(pickle_file_name: str, do_distance_based=True):
 
     # ====Search Path with RRT====
 
-    obstacleList = [
-        (0, 12, (2, 2)),
-        (0, 14, (2, 2)),
-        (2, 14, (2, 2)),
-        (4, 14, (2, 2)),
-        (6, 14, (2, 2)),
-        (6, 12, (2, 2)),
-        (6, 10, (2, 2)),
-        (6, 8, (2, 2)),
-        (8, 8, (2, 2))
-    ]
-    
     # obstacleList = [
-    #     (5, 5, (2, 2)),
-    #     (3, 6, (2, 2)),
-    #     (3, 8, (2, 2)),
-    #     (3, 10, (2, 2)),
-    #     (7, 5, (2, 2)),
-    #     (9, 5, (2, 2)),
-    # ]  # [x,y,size(width, height)]
+    #     (0, 12, (2, 2)),
+    #     (0, 14, (2, 2)),
+    #     (2, 14, (2, 2)),
+    #     (4, 14, (2, 2)),
+    #     (6, 14, (2, 2)),
+    #     (6, 12, (2, 2)),
+    #     (6, 10, (2, 2)),
+    #     (6, 8, (2, 2)),
+    #     (8, 8, (2, 2))
+    # ]
+    
+    obstacleList = [
+        (5, 5, (2, 2)),
+        (3, 6, (2, 2)),
+        (3, 8, (2, 2)),
+        (7, 5, (2, 2)),
+        (9, 5, (2, 2)),
+    ]  # [x,y,size(width, height)]
 
     start = [0.0, 0.0, np.deg2rad(0.0), 0.0] # x, y, yaw, velocity
     goal = [12.0, 12.0, np.deg2rad(0.0), 0.0]
     
     curvature_search_range = (0.6, 1.0)
-    velocity_range = (0.5, 3.0)  # [m/s]
+    velocity_range = (0.5, 6.0)  # [m/s]
     velocity_step = 0.5  # [m/s]
 
     # Run planners
@@ -560,16 +559,13 @@ if __name__ == '__main__':
     np.random.seed(198)
 
     path = pathlib.Path(__file__).parent
-    pickle_file_name = f"{path}/plots/rectangle_obstacles_improved_inner_loop"
+    pickle_file_name = f"{path}/plots/optimized_version_01"
 
-    # rectangle_obstacles --> No optimization, without distance based, vel_range(0.5, 3.0), vel_step=0.5 --> Runtime: 62.71, 63.32, 81.99, 159.74 seconds
-
-    # rectangle_obstacles_T --> Without any optimization, without distance based, and vel_range(0.5, 6.0), vel_step=0.5 --> Runtime: 2:41 minutes
-    # rectangle_obstacles_T_1 --> Without only tuples opt, without distance based, and vel_range(0.5, 6.0), vel_step=0.5 --> Runtime: 5:39 minutes
-    # rectangle_obstacles_T_2 --> Only meshgrid opt without distance based, and vel_range(0.5, 6.0), vel_step=0.5 --> Runtime: 
+    # unoptimized_version_01: curvature_search_range = (0.6, 1.0), velocity_range = (0.5, 6.0)  velocity_step = 0.5  --> Runtime: 584.08 seconds
+    # optimized_version_01: curvature_search_range = (0.6, 1.0), velocity_range = (0.5, 6.0)  velocity_step = 0.5  --> Runtime: 16.99 seconds
 
     # start=time.time()
-    # main(pickle_file_name, do_distance_based=False)
+    # main(pickle_file_name, do_distance_based=True)
     # end = time.time()-start
     # print(f"Runtime: {round(end, 2)} seconds")
 
