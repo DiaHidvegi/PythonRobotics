@@ -185,7 +185,10 @@ class RRT:
                 plt.plot(node.path_x, node.path_y, "-g")
 
         for (ox, oy, size) in self.obstacle_list:
-            self.plot_circle(ox, oy, size)
+            if isinstance(size, int) or isinstance(size, float):
+                self.plot_circle(ox, oy, size)
+            elif isinstance(size, tuple):
+                self.plot_rectangle(ox, oy, size)
 
         if self.play_area is not None:
             plt.plot([self.play_area.xmin, self.play_area.xmax,
@@ -212,6 +215,13 @@ class RRT:
         plt.plot(xl, yl, color)
 
     @staticmethod
+    def plot_rectangle(x, y, size, color="b"):  # pragma: no cover
+        
+        w, h = size
+        plt.plot([x, x - w, x - w, x, x], [y, y, y - h, y - h, y], color)
+        plt.fill([x, x - w, x - w, x, x], [y, y, y - h, y - h, y], color)
+
+    @staticmethod
     def get_nearest_node_index(node_list, rnd_node):
         dlist = [(node.x - rnd_node.x)**2 + (node.y - rnd_node.y)**2
                  for node in node_list]
@@ -233,17 +243,26 @@ class RRT:
 
     @staticmethod
     def check_collision(node, obstacleList, robot_radius):
-
         if node is None:
             return False
 
         for (ox, oy, size) in obstacleList:
-            dx_list = [ox - x for x in node.path_x]
-            dy_list = [oy - y for y in node.path_y]
-            d_list = [dx * dx + dy * dy for (dx, dy) in zip(dx_list, dy_list)]
+            if isinstance(size, int) or isinstance(size, float):
+                dx_list = [ox - x for x in node.path_x]
+                dy_list = [oy - y for y in node.path_y]
+                d_list = [dx * dx + dy * dy for (dx, dy) in zip(dx_list, dy_list)]
 
-            if min(d_list) <= (size+robot_radius)**2:
-                return False  # collision
+                if min(d_list) <= (size+robot_radius)**2:
+                    return False  # collision
+                
+            elif isinstance(size, tuple):
+                w, h = size
+                dx_list = [ox - x for x in node.path_x]
+                dy_list = [oy - y for y in node.path_y]
+                d_list = [dx * dx + dy * dy for (dx, dy) in zip(dx_list, dy_list)]
+
+                if min(d_list) <= (math.sqrt(w**2 + h**2) + robot_radius)**2:
+                    return False  # collision
 
         return True  # safe
 

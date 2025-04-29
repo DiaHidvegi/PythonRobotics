@@ -1,3 +1,4 @@
+PathPlanning/RRTStarDubinsEnergy/plots
 *.csv
 *.gif
 *.g2o

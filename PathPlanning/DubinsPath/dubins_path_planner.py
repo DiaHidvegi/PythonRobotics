@@ -9,6 +9,8 @@ import sys
 import pathlib
 sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))
 
+
+from PathPlanning.DubinsPathEnergy.dubins_path_energy_planner import _calculate_energy_cost
 from math import sin, cos, atan2, sqrt, acos, pi, hypot
 import numpy as np
 from utils.angle import angle_mod, rot_mat_2d
@@ -93,9 +95,9 @@ def plan_dubins_path(s_x, s_y, s_yaw, g_x, g_y, g_yaw, curvature,
     local_goal_y = le_xy[1]
     local_goal_yaw = g_yaw - s_yaw
 
-    lp_x, lp_y, lp_yaw, modes, lengths = _dubins_path_planning_from_origin(
+    lp_x, lp_y, lp_yaw, modes, lengths, energy_cost, segment_energy_costs, segment_power_costs = _dubins_path_planning_from_origin(
         local_goal_x, local_goal_y, local_goal_yaw, curvature, step_size,
-        planning_funcs)
+        planning_funcs, calculate_energy=True)
 
     # Convert a local coordinate path to the global coordinate
     rot = rot_mat_2d(-s_yaw)
@@ -104,7 +106,7 @@ def plan_dubins_path(s_x, s_y, s_yaw, g_x, g_y, g_yaw, curvature,
     y_list = converted_xy[:, 1] + s_y
     yaw_list = angle_mod(np.array(lp_yaw) + s_yaw)
 
-    return x_list, y_list, yaw_list, modes, lengths
+    return x_list, y_list, yaw_list, modes, lengths, energy_cost, segment_energy_costs, segment_power_costs
 
 
 def _mod2pi(theta):
@@ -201,7 +203,8 @@ _PATH_TYPE_MAP = {"LSL": _LSL, "RSR": _RSR, "LSR": _LSR, "RSL": _RSL,
 
 
 def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, curvature,
-                                      step_size, planning_funcs):
+                                      step_size, planning_funcs, calculate_energy=False, v1=3.0, v2=3.0, v3=3.0, v4=3.0):
+    energy_cost, segment_energy_costs, segment_power_costs = 0.0, [], []
     dx = end_x
     dy = end_y
     d = hypot(dx, dy) * curvature
@@ -228,7 +231,10 @@ def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, curvature,
 
     lengths = [length / curvature for length in lengths]
 
-    return x_list, y_list, yaw_list, b_mode, lengths
+    if calculate_energy:
+        energy_cost, segment_energy_costs, segment_power_costs = _calculate_energy_cost(b_d1, b_d2, b_d3, b_mode, v1, np.array([v2]), np.array([v3]), v4, curvature)
+
+    return x_list, y_list, yaw_list, b_mode, lengths, energy_cost, segment_energy_costs, segment_power_costs
 
 
 def _interpolate(length, mode, max_curvature, origin_x, origin_y,
@@ -295,7 +301,7 @@ def main():
 
     curvature = 1.0
 
-    path_x, path_y, path_yaw, mode, lengths = plan_dubins_path(start_x,
+    path_x, path_y, path_yaw, mode, lengths, energy_cost, segment_energy_costs = plan_dubins_path(start_x,
                                                                start_y,
                                                                start_yaw,
                                                                end_x,
