@@ -559,14 +559,14 @@ if __name__ == '__main__':
     np.random.seed(198)
 
     path = pathlib.Path(__file__).parent
-    pickle_file_name = f"{path}/plots/optimized_version_01"
+    pickle_file_name = f"{path}/plots/test_master_update"
 
     # unoptimized_version_01: curvature_search_range = (0.6, 1.0), velocity_range = (0.5, 6.0)  velocity_step = 0.5  --> Runtime: 584.08 seconds
     # optimized_version_01: curvature_search_range = (0.6, 1.0), velocity_range = (0.5, 6.0)  velocity_step = 0.5  --> Runtime: 16.99 seconds
 
-    # start=time.time()
-    # main(pickle_file_name, do_distance_based=True)
-    # end = time.time()-start
-    # print(f"Runtime: {round(end, 2)} seconds")
+    start=time.time()
+    main(pickle_file_name, do_distance_based=True)
+    end = time.time()-start
+    print(f"Runtime: {round(end, 2)} seconds")
 
     show_plots(pickle_file_name)
