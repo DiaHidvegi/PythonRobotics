@@ -375,7 +375,11 @@ def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end
             current_segment_power_costs = segment_power_costs[:, *id_min_cost]
 
             if best_cost > current_min_cost:  # Select minimum energy cost path
-                b_d1, b_d2, b_d3, b_v2, b_v3, b_mode, b_cur, best_cost, best_segment_energy_costs, best_segment_power_costs = d1, d2, d3, current_v2, current_v3, mode, cur, current_min_cost, current_segment_energy_costs, current_segment_power_costs
+                b_d1, b_d2, b_d3, b_mode, b_cur = d1, d2, d3, mode, cur
+                b_v2, b_v3 = current_v2, current_v3
+                best_cost = current_min_cost
+                best_segment_energy_costs = current_segment_energy_costs
+                best_segment_power_costs = current_segment_power_costs
 
     segment_velocities = [v1, b_v2, b_v3, v4]
     lengths = [b_d1, b_d2, b_d3]
