@@ -203,7 +203,7 @@ _PATH_TYPE_MAP = {"LSL": _LSL, "RSR": _RSR, "LSR": _LSR, "RSL": _RSL,
 
 
 def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, curvature,
-                                      step_size, planning_funcs, calculate_energy=False, v1=3.0, v2=3.0, v3=3.0, v4=3.0):
+                                      step_size, planning_funcs, calculate_energy=False, v1=2.5, v2=2.5, v3=2.5, v4=2.5):
     energy_cost, segment_energy_costs, segment_power_costs = 0.0, [], []
     dx = end_x
     dy = end_y

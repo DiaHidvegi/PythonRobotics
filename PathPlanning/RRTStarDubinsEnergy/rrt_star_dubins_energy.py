@@ -331,7 +331,9 @@ def show_final_2D_trajectory(fig, pos, rrtstar_dubins: RRTStar, path_found, titl
     plt.plot(path_x_nodes[1:-1], path_y_nodes[1:-1], "or", alpha=0.5)
 
     total_energy_cost = np.round(np.sum([node.path_energy_cost for node in rrtstar_dubins.found_path[1:]]), 2)
-    plt.title(title + f" Total energy: {total_energy_cost}")
+    plt.title(title + f" Total energy: {total_energy_cost} J")
+    ax.set_xlabel('X [m]')
+    ax.set_ylabel('Y [m]')
     plt.axis("equal")
     plt.grid(True)
     return ax
@@ -368,9 +370,9 @@ def show_final_3D_trajectory(fig, pos, rrtstar_dubins: RRTStar, title: str):
 
     plt.title(title)
     plt.grid(True)
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Velocity')
+    ax.set_xlabel('X [m]')
+    ax.set_ylabel('Y [m]')
+    ax.set_zlabel('Velocity [m/s]')
     return ax
 
 def show_velocity_over_trajectory_length(fig, pos, rrtstar_dubins_energy, title: str):
@@ -385,6 +387,8 @@ def show_velocity_over_trajectory_length(fig, pos, rrtstar_dubins_energy, title:
     plt.title(title)
     plt.axis("equal")
     plt.grid(True)
+    ax.set_xlabel('Trajectory length [m]')
+    ax.set_ylabel('Velocity [m/s]')
     return ax
 
 def show_energy_consumption_over_trajectory_length(fig, pos, rrtstar_dubins_energy, title: str):
@@ -401,6 +405,8 @@ def show_energy_consumption_over_trajectory_length(fig, pos, rrtstar_dubins_ener
     plt.title(title)
     plt.axis("equal")
     plt.grid(True)
+    ax.set_xlabel('Trajectory length [m]')
+    ax.set_ylabel('Energy cost [J]')
     return ax
 
 def show_energy_over_segment_index(fig, pos, rrtstar_dubins_energy, title: str):
@@ -418,6 +424,8 @@ def show_energy_over_segment_index(fig, pos, rrtstar_dubins_energy, title: str):
     plt.xlim(min(x) - x_margin, max(x) + x_margin)
     plt.title(title)
     plt.grid(True)
+    ax.set_xlabel('Segment index')
+    ax.set_ylabel('Energy cost [J]')
     return ax
 
 def show_power_over_segment_index(fig, pos, rrtstar_dubins_energy, title: str):
@@ -435,6 +443,8 @@ def show_power_over_segment_index(fig, pos, rrtstar_dubins_energy, title: str):
     plt.xlim(min(x) - x_margin, max(x) + x_margin)
     plt.title(title)
     plt.grid(True)
+    ax.set_xlabel('Segment index')
+    ax.set_ylabel('Power cost [W]')
     return ax
 
 def show_velocity_over_segment_index(fig, pos, rrtstar_dubins_energy, title: str):
@@ -451,6 +461,8 @@ def show_velocity_over_segment_index(fig, pos, rrtstar_dubins_energy, title: str
     plt.xlim(min(x) - x_margin, max(x) + x_margin)
     plt.title(title)
     plt.grid(True)
+    ax.set_xlabel('Segment index')
+    ax.set_ylabel('Velocity [m/s]')
     return ax
 
 def main(pickle_file_name: str, do_distance_based=True):
@@ -458,31 +470,36 @@ def main(pickle_file_name: str, do_distance_based=True):
 
     # ====Search Path with RRT====
 
-    # obstacleList = [
-    #     (0, 12, (2, 2)),
-    #     (0, 14, (2, 2)),
-    #     (2, 14, (2, 2)),
-    #     (4, 14, (2, 2)),
-    #     (6, 14, (2, 2)),
-    #     (6, 12, (2, 2)),
-    #     (6, 10, (2, 2)),
-    #     (6, 8, (2, 2)),
-    #     (8, 8, (2, 2))
-    # ]
-    
     obstacleList = [
-        (5, 5, (2, 2)),
-        (3, 6, (2, 2)),
-        (3, 8, (2, 2)),
-        (7, 5, (2, 2)),
-        (9, 5, (2, 2)),
-    ]  # [x,y,size(width, height)]
+        (0, 12, (2, 2)),
+        (0, 14, (2, 2)),
+        (2, 14, (2, 2)),
+        (4, 14, (2, 2)),
+        (6, 14, (2, 2)),
+        (6, 12, (2, 2)),
+        (6, 10, (2, 2)),
+        (6, 8, (2, 2)),
+        (8, 8, (2, 2))
+    ]
+    
+    # obstacleList = [
+    #     (5, 5, (2, 2)),
+    #     (3, 6, (2, 2)),
+    #     (3, 8, (2, 2)),
+    #     (7, 5, (2, 2)),
+    #     (9, 5, (2, 2)),
+    # ]  # [x,y,size(width, height)]
+
+    # obstacleList = [
+    #     (5, 5, (2, 2)),
+    #     (7, 5, (1, 2))
+    # ]  # [x,y,size(width, height)]
 
     start = [0.0, 0.0, np.deg2rad(0.0), 0.0] # x, y, yaw, velocity
     goal = [12.0, 12.0, np.deg2rad(0.0), 0.0]
     
-    curvature_search_range = (0.6, 1.0)
-    velocity_range = (0.5, 6.0)  # [m/s]
+    curvature_search_range = (0.6, 1.0, 1.2) 
+    velocity_range = (0.5, 8.0)  # [m/s]
     velocity_step = 0.5  # [m/s]
 
     # Run planners
@@ -555,8 +572,8 @@ def show_plots(pickle_file_name: str):
 if __name__ == '__main__':
     import time
 
-    random.seed(198)
-    np.random.seed(198)
+    random.seed(18)
+    np.random.seed(18)
 
     path = pathlib.Path(__file__).parent
     pickle_file_name = f"{path}/plots/test_master_update"
@@ -564,9 +581,9 @@ if __name__ == '__main__':
     # unoptimized_version_01: curvature_search_range = (0.6, 1.0), velocity_range = (0.5, 6.0)  velocity_step = 0.5  --> Runtime: 584.08 seconds
     # optimized_version_01: curvature_search_range = (0.6, 1.0), velocity_range = (0.5, 6.0)  velocity_step = 0.5  --> Runtime: 16.99 seconds
 
-    start=time.time()
+    # start=time.time()
     main(pickle_file_name, do_distance_based=True)
-    end = time.time()-start
-    print(f"Runtime: {round(end, 2)} seconds")
+    # end = time.time()-start
+    # print(f"Runtime: {round(end, 2)} seconds")
 
     show_plots(pickle_file_name)

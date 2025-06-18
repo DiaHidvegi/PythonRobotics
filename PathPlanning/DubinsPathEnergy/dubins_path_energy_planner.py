@@ -13,6 +13,7 @@ from scipy.integrate import quad
 import numpy as np
 from utils.angle import angle_mod, rot_mat_2d
 import multiprocessing
+import time
 
 show_animation = True
 
@@ -91,10 +92,12 @@ def plan_dubins_path(s_x, s_y, s_yaw, s_velocity,
     local_goal_yaw = g_yaw - s_yaw
 
     # AFTER: produce velocity_list right away along with other optimized parameters
+    start_param_opt = time.time()
     lp_x, lp_y, lp_yaw, velocity_list, modes, lengths, segment_velocities, lsegment_coordinates, segment_energy_costs, segment_power_costs = _dubins_path_planning_from_origin(
         local_goal_x, local_goal_y, local_goal_yaw, s_velocity, g_velocity, curvature_search_range, step_size,
         planning_funcs, velocity_range, velocity_step)
-
+    end_param_opt = time.time()-start_param_opt
+    # print(f"Runtime end_param_opt: {round(end_param_opt, 2)} seconds")
     # Convert a local coordinate path to the global coordinate
     rot = rot_mat_2d(-s_yaw)
     converted_xy = np.stack([lp_x, lp_y]).T @ rot
@@ -354,6 +357,7 @@ def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end
     velocity_search_range = np.arange(velocity_range[0], velocity_range[-1]+velocity_step, velocity_step)
     V2, V3 = np.meshgrid(velocity_search_range, velocity_search_range)
 
+    start=time.time()
     for planner in planning_funcs: # 6 planners
 
         # Search along different radius sizes for turns within path
@@ -380,6 +384,9 @@ def _dubins_path_planning_from_origin(end_x, end_y, end_yaw, start_velocity, end
                 best_cost = current_min_cost
                 best_segment_energy_costs = current_segment_energy_costs
                 best_segment_power_costs = current_segment_power_costs
+
+    end = time.time()-start
+    # print(f"Runtime outer loop: {round(end, 2)} seconds")
 
     segment_velocities = [v1, b_v2, b_v3, v4]
     lengths = [b_d1, b_d2, b_d3]
@@ -633,10 +640,10 @@ def main():
                  label=f"Path type: {''.join(energy_mode)}, v={[round(v,2) for v in segment_velocities]} m/s")
         plot_arrow(start_x, start_y, start_yaw)
         plot_arrow(end_x, end_y, end_yaw)
-        plt.legend()
+        # plt.legend()
         plt.grid(True)
         plt.axis("equal")
-        plt.title("energy-optimized path with optimal velocity")
+        plt.title("Energy-optimized path with optimal velocity")
 
         plt.tight_layout()
         plt.show()
